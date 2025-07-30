@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>WebRTC Signaling Test</title>
+</head>
+<body>
+  <h2>WebRTC Peer</h2>
+  <video id="remoteVideo" autoplay playsinline></video>
+  <br>
+  <button onclick="makeCall()">Start Call (Offer)</button>
+  <script>
+    let peerConnection;
+
+    // 1.
+    // Initialize signaling channel and handle incoming messages
+    const signalingChannel = new WebSocket('ws://localhost:8000');
+
+    signalingChannel.addEventListener('open', () => {
+      console.log('[Peer] Entered Signaling channel.');
+      signalingChannel.send(JSON.stringify('Hello from Peer'));
+    });
+
+    signalingChannel.addEventListener('message', async event => {
+      let message;
+
+      // Check if event.data is a Blob; convert to string if needed
+      if (event.data instanceof Blob) {
+        const text = await event.data.text();
+        message = JSON.parse(text);
+      } else {
+        message = JSON.parse(event.data);
+      }
+
+      console.log('[Peer] Received message:', message);
+
+      // Received an offer → Create and send an answer
+      if (message.offer) {
+        console.log('[Peer] Received offer.');
+        peerConnection = createPeerConnection();
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(message.offer));
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        signalingChannel.send(JSON.stringify({ answer }));
+        console.log('[Peer] Sent answer.');
+      }
+
+      // Received an answer → Set remote description
+      else if (message.answer) {
+        console.log('[Peer] Received answer.');
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(message.answer));
+      }
+
+      // Received ICE candidate → Add to connection
+      else if (message['new-ice-candidate']) {
+        console.log('[Peer] Received ICE candidate.');
+        try {
+          await peerConnection.addIceCandidate(message['new-ice-candidate']);
+        } catch (e) {
+          console.error('Failed to add ICE candidate:', e);
+        }
+      }
+    });
+
+    // 2.
+    // Create an offer and send it through the signaling server
+    async function makeCall() {
+    console.log('[Peer] Creating offer...');
+    peerConnection = createPeerConnection();
+
+    // 2-1. Connect MediaStream before creating offer
+    // Prepare local stream and add it to the peer connection
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+    // For checking Logs
+    
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+    signalingChannel.send(JSON.stringify({ offer }));
+    console.log('[Peer] Sent offer.');
+
+    peerConnection.getTransceivers().forEach(transceiver => {
+        console.log('transceiver mid:', transceiver.mid);
+        console.log('media kind:', transceiver.receiver.track.kind);
+        });
+    }
+
+
+    // 3.
+    // Create and configure RTCPeerConnection instance
+    function createPeerConnection() {
+      const configuration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+      const pc = new RTCPeerConnection(configuration);
+      
+      // 4.
+      // Listen for local ICE candidates on the RTCPeerConnection
+      pc.addEventListener('icecandidate', event => {
+        if (event.candidate) {
+          console.log('[Peer] Sending ICE candidate...',event.candidate);
+          signalingChannel.send(JSON.stringify({ 'new-ice-candidate': event.candidate }));
+        }
+      });
+
+      // 5.
+      // Listen for connection state changes
+      pc.addEventListener('connectionstatechange', () => {
+        console.log('[Peer] Connection state:', pc.connectionState);
+        if (pc.connectionState === 'connected') {
+          console.log('Peers connected.');
+        }
+      });
+
+      // 6.
+      // Add remote tracks to the local video element
+      pc.addEventListener('track', event => {
+        const [remoteStream] = event.streams;
+        document.getElementById('remoteVideo').srcObject = remoteStream;
+        console.log('[Peer] Remote stream attached.');
+      });
+
+
+      return pc;
+    }
+  </script>
+</body>
+</html>
