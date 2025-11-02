@@ -1,0 +1,276 @@
+0
+: 
+RTCIceCandidate
+address
+: 
+"192.168.0.6"
+candidate
+: 
+"candidate:3433148685 1 udp 2122260223 192.168.0.6 50786 typ host generation 0 ufrag NleY network-id 1 network-cost 10"
+component
+: 
+"rtp"
+foundation
+: 
+"3433148685"
+port
+: 
+50786
+priority
+: 
+2122260223
+protocol
+: 
+"udp"
+relatedAddress
+: 
+null
+relatedPort
+: 
+null
+relayProtocol
+: 
+null
+sdpMLineIndex
+: 
+0
+sdpMid
+: 
+"0"
+tcpType
+: 
+null
+type
+: 
+"host"
+url
+: 
+""
+usernameFragment
+: 
+"NleY"
+[[Prototype]]
+: 
+RTCIceCandidate
+address
+: 
+(...)
+candidate
+: 
+(...)
+component
+: 
+(...)
+foundation
+: 
+(...)
+port
+: 
+(...)
+priority
+: 
+(...)
+protocol
+: 
+(...)
+relatedAddress
+: 
+(...)
+relatedPort
+: 
+(...)
+relayProtocol
+: 
+(...)
+sdpMLineIndex
+: 
+(...)
+sdpMid
+: 
+(...)
+tcpType
+: 
+(...)
+toJSON
+: 
+ƒ toJSON()
+type
+: 
+(...)
+url
+: 
+(...)
+usernameFragment
+: 
+(...)
+constructor
+: 
+ƒ RTCIceCandidate()
+Symbol(Symbol.toStringTag)
+: 
+"RTCIceCandidate"
+get address
+: 
+ƒ address()
+get candidate
+: 
+ƒ candidate()
+get component
+: 
+ƒ component()
+get foundation
+: 
+ƒ foundation()
+get port
+: 
+ƒ port()
+get priority
+: 
+ƒ priority()
+get protocol
+: 
+ƒ protocol()
+get relatedAddress
+: 
+ƒ relatedAddress()
+get relatedPort
+: 
+ƒ relatedPort()
+get relayProtocol
+: 
+ƒ relayProtocol()
+get sdpMLineIndex
+: 
+ƒ sdpMLineIndex()
+get sdpMid
+: 
+ƒ sdpMid()
+get tcpType
+: 
+ƒ tcpType()
+get type
+: 
+ƒ type()
+get url
+: 
+ƒ url()
+get usernameFragment
+: 
+ƒ usernameFragment()
+[[Prototype]]
+: 
+Object
+1
+: 
+RTCIceCandidate
+address
+: 
+"203.253.159.19"
+candidate
+: 
+"candidate:3923279591 1 udp 1686052607 203.253.159.19 50786 typ srflx raddr 192.168.0.6 rport 50786 generation 0 ufrag NleY network-id 1 network-cost 10"
+component
+: 
+"rtp"
+foundation
+: 
+"3923279591"
+port
+: 
+50786
+priority
+: 
+1686052607
+protocol
+: 
+"udp"
+relatedAddress
+: 
+"192.168.0.6"
+relatedPort
+: 
+50786
+relayProtocol
+: 
+null
+sdpMLineIndex
+: 
+0
+sdpMid
+: 
+"0"
+tcpType
+: 
+null
+type
+: 
+"srflx"
+url
+: 
+"stun:stun.l.google.com:19302"
+usernameFragment
+: 
+"NleY"
+[[Prototype]]
+: 
+RTCIceCandidate
+2
+: 
+RTCIceCandidate
+address
+: 
+"192.168.0.6"
+candidate
+: 
+"candidate:2993574805 1 tcp 1518280447 192.168.0.6 9 typ host tcptype active generation 0 ufrag NleY network-id 1 network-cost 10"
+component
+: 
+"rtp"
+foundation
+: 
+"2993574805"
+port
+: 
+9
+priority
+: 
+1518280447
+protocol
+: 
+"tcp"
+relatedAddress
+: 
+null
+relatedPort
+: 
+null
+relayProtocol
+: 
+null
+sdpMLineIndex
+: 
+0
+sdpMid
+: 
+"0"
+tcpType
+: 
+"active"
+type
+: 
+"host"
+url
+: 
+""
+usernameFragment
+: 
+"NleY"
+[[Prototype]]
+: 
+RTCIceCandidate
+length
+: 
+3
+[[Prototype]]
+: 
+Array(0)

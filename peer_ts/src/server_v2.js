@@ -1,26 +1,6 @@
 
-// server.js 
+// server.js v2 : candidatArray
 
-// Node.js 내장 모듈 http 가져옴. HTTP 서버를 만들기 위해 사용됨. 
-// const http = require('http');
-// // Express 프레임워크를 사용하여 HTTP 서버를 쉽게 만들기 위해 express 모듈을 가져옴.
-// // Express는 Node.js에서 웹 애플리케이션을 구축하기 위한 프레임
-// const express = require('express');
-// // WebSocket 프로토콜을 사용하여 실시간 양방향 통신을 가능하게 하는 ws 모듈을 가져옴.
-// // WebSocket은 클라이언트와 서버 간의 지속적인 연결을 유지하여 실시간 데이터 전송을 가능하게 함.
-// // const WebSocket = require('ws');
-// // path 모듈을 가져와 파일 경로를 다루기 쉽게 함.
-// // path 모듈은 파일 경로를 조작하고, 경로를 정규
-// const path = require('path');
-// // 현재 디렉토리(__dirname)를 사용하여 정적 파일을 제공하기 위한 Express 애플리케이션을 생성함.
-// // __dirname은 현재 모듈의 디렉토리 이름을 나타냄 
-// const app = express();
-// app.use(express.static(__dirname));
-
-// const httpServer = http.createServer(app);
-
-
-// httpServer.listen(8000, () => console.log('HTTP/WS on :8000'));
 
 const fs = require('fs');
 const https = require('https');
@@ -64,7 +44,7 @@ const peers = new Map();
 io.on('connection', socket => {
     const id = Math.random().toString(36).substr(2, 9); // generate random ID
     peers.set(id, socket);
-    console.log(`[Server] New connection: ${id}`);
+    
     
     socket.on('join', room => {
         if (!rooms.has(room)) {
@@ -110,12 +90,6 @@ io.on('connection', socket => {
     socket.on('candidate', ({to,data}) => {
         const targetSocket = peers.get(to);
         targetSocket.emit('candidate', {from: id, data});
-        console.log(`[Server] Candidate from ${id} to ${to}`);
-    })
-    // 1029 새로 추가
-    socket.on('candidateArray', ({to,data}) => {
-        const targetSocket = peers.get(to);
-        targetSocket.emit('candidateArray', {from: id, data});
         console.log(`[Server] Candidate from ${id} to ${to}`);
     })
 

@@ -1,0 +1,33 @@
+Chromebook1 offer
+
+0
+: 
+candidate
+: 
+"candidate:2577459045 1 udp 2113937151 bc152fe5-42be-489b-85b6-41d9e21dcb7a.local 57899 typ host generation 0 ufrag dg9R network-cost 999"
+sdpMLineIndex
+: 
+0
+sdpMid
+: 
+"0"
+usernameFragment
+: 
+"dg9R"
+[[Prototype]]
+: 
+Object
+1
+: 
+candidate
+: 
+"candidate:3416118423 1 udp 1677729535 203.253.159.19 57899 typ srflx raddr 0.0.0.0 rport 0 generation 0 ufrag dg9R network-cost 999"
+sdpMLineIndex
+: 
+0
+sdpMid
+: 
+"0"
+usernameFragment
+: 
+"dg9R"
