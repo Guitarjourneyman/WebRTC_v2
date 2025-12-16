@@ -15,7 +15,7 @@ Found mDNS occurring display issues
  3. peer_ts>App.tsx 에서 Mode: Mesh | SFU 설정 (SFU가 1-N임 추후 네이밍 변경예정 -> 변경해서 Commit 해주면 좋음)
 
 ### 추가 필요 사항
-/* 1-N 에러 처리로직 */
-** candidate 수신 전 , remotedescription 에러 생기는 지 확인 (비동기적 문제로 순서가 꼬이는 지 그리고, In case Error handler 여부 확인)
-** disconnected가 될때 Reset처리 (Soft/Hard reset 올바르게 동작하는 지 확인; 현재는 주석 처리 해둠)
+/* 1-N 에러 처리로직 */  
+** candidate 수신 전 , remotedescription 에러 생기는 지 확인 (비동기적 문제로 순서가 꼬이는 지 그리고, In case Error handler 여부 확인)  
+** disconnected가 될때 Reset처리 (Soft/Hard reset 올바르게 동작하는 지 확인; 현재는 주석 처리 해둠)  
 
