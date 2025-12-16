@@ -93,7 +93,42 @@ io.on('connection', socket => {
 
     });
     
- 
+    socket.on('join-sfu', room => {
+        if (!rooms.has(room)) {
+            console.log(`[Server] Room ${room} does not exist, creating new room.`);
+            rooms.set(room, new Set());
+        }
+        socket.join(room);
+       
+        // 본인 id 전송 0906
+        socket.emit('my-id', id);
+
+       const existingPeers = []; 
+       // 맨처음 참가자만 전달  (나 자신 제외)
+       if(peers.size > 1){
+            const allKeys = [...peers.keys()]; // 모든 키를 배열로 변환
+            const firstKey = allKeys[0];      // 배열의 첫 번째 요소 접근
+            console.log(`[Server] First peer in room ${room} `,firstKey);            
+            existingPeers.push(firstKey);
+       }
+       else if (peers.size <= 1){
+              console.log(`[Server] No existing peers in room ${room}`);
+       }
+
+       console.log(`[Server] Existing peers in room ${room}:`, existingPeers);
+       socket.emit('existing-peers', existingPeers);
+       
+       // 모두에게 new peer 이벤트 전송 (나 자신 제외)
+         socket.to(room).emit('new-peer', id);
+        // console.log(`[Server] Peer ${id} joined room ${room}`);
+        
+         // 디버깅 로그
+        console.log(`[room:${room}] join ->`, id);
+        // room에 참가한 소켓에 room 정보 저장, data는 기본적으로 {}, 원하는 key 추가가능
+        if (!socket.data) socket.data = {};
+        socket.data.room = room;
+
+    });
    socket.on('offer', ({to,data}) => {
         const targetSocket = peers.get(to);
         targetSocket.emit('offer', {from: id, data});
@@ -129,3 +164,6 @@ io.on('connection', socket => {
         }
     });
 });
+
+
+

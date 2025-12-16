@@ -1,4 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+/* 
+ Hook 함수와 Promise를 활용하여
+ 상태 변경을 기다리는 await 구현 예제
+
+*/
+
+
 
 // Promise 란? : 비동기 작업의 완료 또는 실패를 나타내는 객체
 // resolve : 작업이 성공적으로 완료되었음을 알리는 함수

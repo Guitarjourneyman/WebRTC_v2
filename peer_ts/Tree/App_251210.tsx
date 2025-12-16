@@ -6,6 +6,10 @@
     3. 화면 공유 스트림 교체 기능
     4. 비트레이트 설정 기능
     5. SFU / MESH 모드 선택 기능
+    6. constraints 변수로 모든 MediaStream(Display/Camera) 제어
+/* 
+
+추가사항: Scalable Mode 추가 (서버에서 마지막 피어를 알려주는 로직, 첫번째 피어 알려주는 로직 필요)
 
 */
 
@@ -66,7 +70,15 @@ const pcConfig: RTCConfiguration = {
         },
     ]
 };
-const config = {};
+const constraints = {
+    video: {
+
+        width: { ideal: 2880, max: 2880 },
+        height: { ideal: 1800, max: 1800 },
+        frameRate: { ideal: 30, max: 30 },
+    },
+    audio: true
+};
 // const pcConfig : RTCConfiguration = {"iceServers":[]};
 function App() {
     console.log('Rendering... ');
@@ -193,25 +205,9 @@ function App() {
             console.log('getLocalStream....');
             // 추후 localStreamRef로 로컬 비디오 컴포넌트에서 사용
 
-            // localStreamRef.current = await navigator.mediaDevices.getDisplayMedia({
-            //     video: {
+            localStreamRef.current = await navigator.mediaDevices.getDisplayMedia(constraints);
 
-            //         width: { ideal: 480, max: 480 },
-            //         height: { ideal: 320, max: 320 },
-            //         frameRate: { ideal: 30, max: 30 },
-            //     },
-            //     audio: true
-            // });
-
-            localStreamRef.current = (await navigator.mediaDevices.getUserMedia({
-                  video: {
-
-                    width: { ideal: 4, max: 4 },
-                    height: { ideal: 3, max: 3 },
-                    frameRate: { ideal: 5, max: 5 },
-                },
-                audio: true
-                }));
+            // localStreamRef.current = await navigator.mediaDevices.getUserMedia(constraints);
 
             if (localVideoRef.current) {
                 localVideoRef.current.srcObject = localStreamRef.current;
@@ -235,14 +231,7 @@ function App() {
 
         if (localStreamSortRef.current === 'userMedia') {
             console.log(`[Peer] Current stream is not a display source. Changing stream...`);
-            localStreamRef.current = await navigator.mediaDevices.getDisplayMedia({
-                video: {
-                     width: { ideal: 480, max: 640 },
-                    height: { ideal: 320, max: 480 },
-                    frameRate: { ideal: 30, max: 30 },
-                },
-                audio: true
-            });
+            localStreamRef.current = await navigator.mediaDevices.getDisplayMedia(constraints);
 
             // localStreamRef.current = (await navigator.mediaDevices.getUserMedia({ video: true, audio: true }));
 
@@ -432,6 +421,8 @@ function App() {
             if (localStreamRef.current !== null) {
                 console.log('[Peer] Add local stream to peer connection');
                 localStreamRef.current.getTracks().forEach(track => {
+                    // Scalable Mode: track에 다른 피어로부터 받은 Stream 
+                    // (내 스트림이 아닌 전달할 Stream을 담으면 됨)
                     pc.addTrack(track, localStreamRef.current!);
                 });
             } else {

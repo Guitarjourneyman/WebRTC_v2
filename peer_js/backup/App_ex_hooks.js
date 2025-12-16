@@ -7,7 +7,7 @@ export default function App(){
   const [prevFunction, setPrevFunction] = useState(null);
   const countRef = useRef(1);
   let letCount = 1;
-  // return 값이 있을 때와 없을 떄의 차이도 
+  // return 값이 있을 때와 없을 때의 차이도 
   let testcnt = 1;
 
   
@@ -16,7 +16,7 @@ export default function App(){
   // 함수의 메모리 주소가 변경되지않고 동일하게 유지
   // useCallback이 반환한 함수가 testCallback에 할당
   // return과는 전혀 무관
-  // dependency array에 있는 값이 변경될 때만 함수가 재정의됨 (실행 X)
+  // dependency array에 있는 값이 변경될 때만 함수가 재정의됨 (실행 X, 실행은 호출 시점에)
   const testCallback = useCallback(() => {
     // const id = Math.random().toString(36).substr(2, 9); // generate random ID
     console.log("Callback executed",testcnt);
@@ -44,17 +44,17 @@ export default function App(){
   // UseEffect
   // dependency 있는 값이 변경될 때만 재실행
   useEffect(()=>{
-    // testCallback();
-    // setPrevFunction(testCallback);
-    // if (prevFunction !== null) {
-    //     // 이전 함수와 현재 함수를 비교
-    //     console.log("if :Is function the same?", prevFunction === testCallback);
-    // }
-    // else{
-    //   // else로 빠지는 이유는 useEffect가 처음 실행될 때 prevFunction이 null이기 때문
-    //   // 즉, 처음 실행될 때는 prevFunction이 없으므로 비교할 수 없음
-    //   console.log("else: Is function the same?", prevFunction === testCallback);
-    // }
+    testCallback();
+    setPrevFunction(testCallback);
+    if (prevFunction !== null) {
+        // 이전 함수와 현재 함수를 비교
+        console.log("if :Is function the same?", prevFunction === testCallback);
+    }
+    else{
+      // else로 빠지는 이유는 useEffect가 처음 실행될 때 prevFunction이 null이기 때문
+      // 즉, 처음 실행될 때는 prevFunction이 없으므로 비교할 수 없음
+      console.log("else: Is function the same?", prevFunction === testCallback);
+    }
     
     console.log("Rendering... ");
   },[testCallback]);// dependency , 함수의 참조가 바뀔 때마다 실행됨

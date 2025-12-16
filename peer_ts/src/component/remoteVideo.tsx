@@ -24,8 +24,9 @@ const Video: React.FC<VideoProps> = ({ peerId: peerId, stream}) => {
     }
   }, [stream]);
 
-  return (
-    <div style={{
+return (
+  <div
+    style={{
       position: 'relative',
       width: '640px', // 변경가능
       height: '480px', // 변경가능
@@ -33,23 +34,43 @@ const Video: React.FC<VideoProps> = ({ peerId: peerId, stream}) => {
       borderRadius: '8px',
       overflow: 'hidden',
       margin: '10px',
-      boxShadow: '0 4px 8px rgba(0,0,0,0.2)'
-    }}>
-      {(
-        // 비디오가 활성화된 경우, video 태그를 렌더링합니다.
-        <video
-          ref={videoRef}
-          autoPlay // 스트림이 연결되면 자동으로 재생합니다.
-          playsInline // iOS에서 전체 화면으로 전환되지 않도록 합니다.
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover', // 비디오가 컨테이너를 꽉 채우도록 합니다.
-          }}
-        />
-      )}
-      {/* 비디오 하단에 피어 ID를 표시 */}
-      <div style={{
+      boxShadow: '0 4px 8px rgba(0,0,0,0.2)',
+    }}
+  >
+    {(
+      // 비디오가 활성화된 경우, video 태그를 렌더링합니다.
+      <video
+        ref={videoRef}
+        autoPlay // 스트림이 연결되면 자동으로 재생합니다.
+        playsInline // iOS에서 전체 화면으로 전환되지 않도록 합니다.
+        muted
+        style={{
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover', // 비디오가 컨테이너를 꽉 채우도록 합니다.
+        }}
+      />
+    )}
+
+    {/* 왼쪽 상단에 '내가 수신한 Stream' 표시 */}
+    <div
+      style={{
+        position: 'absolute',
+        top: '8px',
+        left: '8px',
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        color: 'white',
+        padding: '4px 8px',
+        borderRadius: '4px',
+        fontSize: '0.9rem',
+      }}
+    >
+      내가 수신한 Stream
+    </div>
+
+    {/* 비디오 하단에 피어 ID를 표시 */}
+    <div
+      style={{
         position: 'absolute',
         bottom: '8px',
         left: '8px',
@@ -57,12 +78,14 @@ const Video: React.FC<VideoProps> = ({ peerId: peerId, stream}) => {
         color: 'white',
         padding: '4px 8px',
         borderRadius: '4px',
-        fontSize: '0.9rem'
-      }}>
-        {peerId}
-      </div>
+        fontSize: '0.9rem',
+      }}
+    >
+      {peerId}
     </div>
-  );
+  </div>
+);
+
 };
 
 export default Video;
