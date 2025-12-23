@@ -153,5 +153,6 @@ io.on('connection', socket => {
             socket.to(room).emit('disconnected', id);
             console.log(`[Server] Peer ${id} disconnected from room ${room}`);
         }
+        peers.delete(id);                        // 핵심
     });
 });
