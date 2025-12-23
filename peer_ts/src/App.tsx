@@ -213,9 +213,9 @@ function App() {
             localStreamRef.current = (await navigator.mediaDevices.getUserMedia({ // 카메라
                 video: {
 
-                    width: { ideal: 4, max: 4 },
-                    height: { ideal: 3, max: 3 },
-                    frameRate: { ideal: 5, max: 5 },
+                    width: { ideal: 720, max: 1920 },
+                    height: { ideal: 480, max: 1080 },
+                    frameRate: { ideal: 30, max: 60 },
                 },
                 audio: true
             }));
@@ -242,9 +242,9 @@ function App() {
             console.log(`[Peer] Current stream is not a display source. Changing stream...`);
             localStreamRef.current = await navigator.mediaDevices.getDisplayMedia({
                 video: {
-                    width: { ideal: 480, max: 640 },
-                    height: { ideal: 320, max: 480 },
-                    frameRate: { ideal: 30, max: 30 },
+                    width: { ideal: 1280, max: 1920 },
+                    height: { ideal: 720, max: 1080 },
+                    frameRate: { ideal: 30, max: 60 },
                 },
                 audio: true
             });
@@ -320,7 +320,7 @@ function App() {
                 // setVideoBitrate(peerid, BitrateConfig.min)
 
                 const offer = await pc.createOffer();
-                const newSdp = setMaxBandwidth(offer.sdp || '', 'video', 512000); // 비디오 대역폭을 512kbps로 설정
+                const newSdp = setMaxBandwidth(offer.sdp || '', 'video', 512); // 비디오 대역폭을 512kbps로 설정
                 await pc.setLocalDescription(newSdp ? { type: offer.type, sdp: newSdp } : offer);
                 socketRef.current?.emit('offer', { to: peerid, data: newSdp ? { type: offer.type, sdp: newSdp } : offer });
 
@@ -341,7 +341,7 @@ function App() {
 
             const answer = await pc.createAnswer(); // answer 생성
 
-            const newSdp = setMaxBandwidth(answer.sdp || '', 'video', 10000); // 비디오 대역폭 설정
+            const newSdp = setMaxBandwidth(answer.sdp || '', 'video', 100); // 비디오 대역폭 설정
             await pc.setLocalDescription(newSdp ? { type: answer.type, sdp: newSdp } : answer);
             // await pc.setLocalDescription(answer);
             // socketRef.current?.emit('answer', { to: from, data: answer });
