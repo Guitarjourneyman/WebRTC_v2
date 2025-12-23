@@ -49,6 +49,8 @@ io.on('connection', socket => {
             console.log(`[Server] Room ${room} does not exist, creating new room.`);
             rooms.set(room, new Set());
         }
+        rooms.get(room).add(id);                 // 핵심
+
         socket.join(room);
 
         // 본인 id 전송 0906
@@ -80,6 +82,8 @@ io.on('connection', socket => {
             console.log(`[Server] Room ${room} does not exist, creating new room.`);
             rooms.set(room, new Set());
         }
+        rooms.get(room).add(id);                 // 핵심
+
         socket.join(room);
 
         // 본인 id 전송 0906
@@ -146,7 +150,7 @@ io.on('connection', socket => {
         if (room && rooms.has(room)) {
             const peer = rooms.get(room);
             peer.delete(id);
-            socket.to(room).emit('peer-disconnected', id);
+            socket.to(room).emit('disconnected', id);
             console.log(`[Server] Peer ${id} disconnected from room ${room}`);
         }
     });

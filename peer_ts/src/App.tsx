@@ -409,7 +409,7 @@ function App() {
         });
 
 
-        socketRef.current.on('disconnect', (peerId: string) => {
+        socketRef.current.on('disconnected', (peerId: string) => {
             console.log(`[Peer] Peer ${peerId} disconnected.`);
             if (pcsRef.current[peerId]) {
                 pcsRef.current[peerId].close();
