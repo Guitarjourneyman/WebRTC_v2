@@ -1,26 +1,6 @@
 
 // server.js 
 
-// Node.js 내장 모듈 http 가져옴. HTTP 서버를 만들기 위해 사용됨. 
-// const http = require('http');
-// // Express 프레임워크를 사용하여 HTTP 서버를 쉽게 만들기 위해 express 모듈을 가져옴.
-// // Express는 Node.js에서 웹 애플리케이션을 구축하기 위한 프레임
-// const express = require('express');
-// // WebSocket 프로토콜을 사용하여 실시간 양방향 통신을 가능하게 하는 ws 모듈을 가져옴.
-// // WebSocket은 클라이언트와 서버 간의 지속적인 연결을 유지하여 실시간 데이터 전송을 가능하게 함.
-// // const WebSocket = require('ws');
-// // path 모듈을 가져와 파일 경로를 다루기 쉽게 함.
-// // path 모듈은 파일 경로를 조작하고, 경로를 정규
-// const path = require('path');
-// // 현재 디렉토리(__dirname)를 사용하여 정적 파일을 제공하기 위한 Express 애플리케이션을 생성함.
-// // __dirname은 현재 모듈의 디렉토리 이름을 나타냄 
-// const app = express();
-// app.use(express.static(__dirname));
-
-// const httpServer = http.createServer(app);
-
-
-// httpServer.listen(8000, () => console.log('HTTP/WS on :8000'));
 
 const fs = require('fs');
 const https = require('https');
@@ -97,11 +77,11 @@ io.on('connection', socket => {
             console.log(`[Server] Room ${room} does not exist, creating new room.`);
             rooms.set(room, new Set());
         }
-        else{
+        else {
             console.log(`[Server] Room ${room} exists, joining room.`);
             socket.join(room);
         }
-        
+
 
         // Peer type parentid 업데이트
         let peer = peers.get(id);
@@ -110,7 +90,7 @@ io.on('connection', socket => {
         if (newBroadcaster) {
             if (listOfBroadcasts[peer.roomid].broadcasters[newBroadcaster.peerid].numberOfViewers === 0) {
                 // 처음으로 중계자가 된 경우 설정
-                console.log('Setting newBroadcaster ', id, 'as true');
+                console.log('Setting newBroadcaster ', id,'==',peer.peerid, 'as true');
                 peer.isBroadcaster = true;
                 listOfBroadcasts[peer.roomid].activeBroadcasters[peer.peerid] = peer;
             }
@@ -124,7 +104,7 @@ io.on('connection', socket => {
             if (listOfBroadcasts[peer.roomid].broadcasters[newBroadcaster.peerid].numberOfViewers >= AVAILABLE_BROADCASTING_NUMBER) {
                 listOfBroadcasts[peer.roomid].broadcasters[newBroadcaster.peerid].isFull = true;
             }
-        } 
+        }
         // 방송자 목록과 전체 참가자 목록에 Peer 추가
         listOfBroadcasts[peer.roomid].broadcasters[peer.peerid] = peer;
         listOfBroadcasts[peer.roomid].allpeers[peer.peerid] = peer;
@@ -132,8 +112,8 @@ io.on('connection', socket => {
         peers.set(id, peer);
 
         /* Subtree level 재설정 */
-        // updateSubtreeLevels(peer, room);
-        
+        updateSubtreeLevels(peer.roomid, peer.peerid);
+
         // 자식에게 new parent 이벤트 전송 : 자신의 부모(중계자) ID 전달
         console.log('id: ', id, 'new Parent id:', peer.parentid);
         if (id != peer.parentid) socket.emit('new-parent', peer.parentid);
@@ -229,22 +209,7 @@ io.on('connection', socket => {
         socket.data.room = room;
 
     });
-    /* 자식노드가 Full이 아닌 broadcasting 노드 찾기 */
-    // function getFirstAvailableBroadcaster(peer) {
-
-    //     var broadcasters = listOfBroadcasts[peer.roomid].broadcasters;
-    //     var firstResult;
-    //     for (var broadcasterId in broadcasters) {
-    //         var broadcaster = broadcasters[broadcasterId];
-    //         if (!broadcaster.isFull) {
-    //             firstResult = broadcaster;
-    //             break;
-    //         }
-    //         // 꽉 찬 Broadcaster는 가능한 후보군에서 제외
-    //         else delete listOfBroadcasts[peer.roomid].broadcasters[broadcasterId];
-    //     }
-    //     return firstResult;
-    // }
+    
     function getFirstAvailableBroadcaster(peer) {
         var broadcasters = listOfBroadcasts[peer.roomid].broadcasters;
         var firstResult;
@@ -274,25 +239,49 @@ io.on('connection', socket => {
         return firstResult;
     }
 
-    // function updateSubtreeLevels(peer, room) {
-    //     const broadcast = listOfBroadcasts[room];
-    //     if (!broadcast) return;
-    //     const queue = [{ peerId: peer.peerid, level: peer.treeLevel }];
-    //     while (queue.length > 0) {
-    //         const { peerId, level } = queue.shift();
-    //         const currentPeer = broadcast.allpeers[peerId];
-    //         if (currentPeer) {
-    //             currentPeer.treeLevel = level;
-    //             // 자식 노드들 큐에 추가
-    //             currentPeer.childrenids.forEach(childId => {
-    //                 queue.push({ peerId: childId, level: level + 1 });
-    //                 // 디버깅 로그 (업데이트 된 노드의 자식 레벨만 확인)
-    //                 console.log(`[Server] Updated peer ${peers.get(childId).treeLevel}`);
-    //             });
-    //         }
-    //     }
-        
-    // }
+    function updateSubtreeLevels(roomid, peerId) {
+        /* - BFS(너비우선탐색)으로 root에서 아래로 내려가며,
+*   child.treeLevel = parent.treeLevel + 1 을 적용한다.
+*
+* @param {string} roomid       - 방 ID (listOfBroadcasts의 key)
+* @param {string} peerId   - "레벨을 기준으로 삼을" 서브트리의 루트 peerid
+*/      
+        // broadcast && targetpeer 존재 확인
+        const broadcast = listOfBroadcasts[roomid];
+        if (!broadcast) return;
+
+        const targetPeer = broadcast.allpeers[peerId];
+        if (!targetPeer) return;
+
+        const q = [peerId];
+        const visited = new Set([peerId]);
+
+        while (q.length) {
+            const pid = q.shift(); // 현재 부모로 취급할 노드 peerid를 큐에서 꺼냄
+            const parent = broadcast.allpeers[pid]; // pid에 해당하는 peer 객체(부모)를 가져온다.
+            if (!parent) continue;
+
+            const parentLevel = parent.treeLevel;
+            const children = parent.childrenids || [];
+
+            for (const childId of children) {
+                if (visited.has(childId)) continue;
+
+                const child = broadcast.allpeers[childId];
+                if (!child) continue;
+
+                // (선택) 트리 일관성 체크: parent.childrenids 안에 있는데 실제 parentid가 다르면 건너뜀
+                if (child.parentid !== parent.peerid) continue;
+
+                child.treeLevel = parentLevel + 1;
+                console.log(`[Server] Updated treeLevel of peer ${child.peerid} to ${child.treeLevel} (parent: ${parent.peerid} at level ${parentLevel})`);
+                // 방문 처리 및 다음 BFS 대상으로 큐에 넣기
+                visited.add(childId);
+                q.push(childId);
+            }
+        }
+    }
+
     socket.on('offer', ({ to, data }) => {
         const targetSocket = peers.get(to).socket;
         targetSocket.emit('offer', { from: id, data });
@@ -351,7 +340,7 @@ io.on('connection', socket => {
         delete broadcast.broadcasters[peer.peerid];
         delete broadcast.activeBroadcasters[peer.peerid];
         delete broadcast.allpeers[peer.peerid];
-        
+
         console.log('[Server] Removed peer from broadcasters and allpeers:', broadcast.allpeers);
         // 3) rooms / peers 맵 정리
         const roomSet = rooms.get(room);

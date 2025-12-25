@@ -48,7 +48,7 @@ const MODE: string = 'MESH'; // 'MESH' or 'SFU'
 
 // 소켓 인스턴스를 컴포넌트 외부에서 한 번만 생성하여 재렌더링 시 재생성을 방지합니다.
 //https://192.168.0.6:8000
-export const SIGNALING_SERVER_URL = `https://192.168.0.5:8000`
+export const SIGNALING_SERVER_URL = `https://192.168.0.65:8000`
 
 // const socket = io(`https://192.168.0.8:8000`, { autoConnect: false });
 const pcConfig: RTCConfiguration = {
@@ -56,11 +56,11 @@ const pcConfig: RTCConfiguration = {
         {
             urls: [
                 'stun:stun.l.google.com:19302',
-                // 'stun:stun1.l.google.com:19302',
-                // 'stun:stun2.l.google.com:19302',
-                // 'stun:stun3.l.google.com:19302',
-                // 'stun:stun4.l.google.com:19302',
-                // 'stun:23.21.150.121:3478',
+                'stun:stun1.l.google.com:19302',
+                'stun:stun2.l.google.com:19302',
+                'stun:stun3.l.google.com:19302',
+                'stun:stun4.l.google.com:19302',
+                'stun:23.21.150.121:3478',
 
             ]
         },
@@ -206,9 +206,9 @@ function App() {
             localStreamRef.current = (await navigator.mediaDevices.getUserMedia({
                   video: {
 
-                    width: { ideal: 4, max: 4 },
-                    height: { ideal: 3, max: 3 },
-                    frameRate: { ideal: 5, max: 5 },
+                    width: { ideal: 480, max: 480 },
+                    height: { ideal: 320, max: 320 },
+                    frameRate: { ideal: 30, max: 30 },
                 },
                 audio: true
                 }));
@@ -237,8 +237,8 @@ function App() {
             console.log(`[Peer] Current stream is not a display source. Changing stream...`);
             localStreamRef.current = await navigator.mediaDevices.getDisplayMedia({
                 video: {
-                     width: { ideal: 480, max: 640 },
-                    height: { ideal: 320, max: 480 },
+                    width: { ideal: 480, max: 480 },
+                    height: { ideal: 320, max: 320 },
                     frameRate: { ideal: 30, max: 30 },
                 },
                 audio: true
@@ -494,7 +494,7 @@ function App() {
             else if (pc.connectionState === 'connected') {
                 console.log(`[${peerId}] Connection established successfully.changeCount:${changeCount}`);
                 if (changeCount === 0) {
-                    // changeStream();
+                    changeStream(); 
                     changeCount++;
                 }
                 pc.getStats().then(stats => {

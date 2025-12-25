@@ -52,7 +52,7 @@ const MODE: string = 'MESH'; // 'MESH' or 'SFU'
 
 // 소켓 인스턴스를 컴포넌트 외부에서 한 번만 생성하여 재렌더링 시 재생성을 방지합니다.
 //https://192.168.0.6:8000
-export const SIGNALING_SERVER_URL = `https://192.168.0.5:8000`
+export const SIGNALING_SERVER_URL = `https://192.168.0.6:8000`
 
 // const socket = io(`https://192.168.0.8:8000`, { autoConnect: false });
 const pcConfig: RTCConfiguration = {
@@ -83,7 +83,8 @@ const constraints = {
 function App() {
     console.log('Rendering... ');
     let changeCount = 0;
-
+    const room = 'testRoom'; // Example room name
+    
     // Record<<K,T> : TS utility type
 
     /* UseRef 사용하지 않으면 랜더링시 초기화 문제 발생 */
@@ -263,7 +264,7 @@ function App() {
         // 수동으로 연결 시작
         socketRef.current?.connect();
         console.log('Local stream obtained:', localStreamRef.current);
-        const room = 'testRoom'; // Example room name    
+            
 
         socketRef.current.on('connect', () => {
             console.log('[Peer] Connected to signaling server');
@@ -481,7 +482,7 @@ function App() {
             else if (pc.connectionState === 'disconnected' || pc.connectionState === 'closed') {
                 console.log(`[${peerId}] Connection ${pc.connectionState}. Closing peer connection.`);
                 if (pcsRef.current[peerId]) {
-                    socketRef.current?.emit('join-reconnection');
+                    socketRef.current?.emit('join-reconnection', room);         
                     pcsRef.current[peerId].close();
                     delete pcsRef.current[peerId];
                     setUsers(prev => prev.filter(u => u.id !== peerId));
