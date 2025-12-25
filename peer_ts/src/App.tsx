@@ -49,7 +49,7 @@ const displayMediaOptions = {
 const MODE: string = 'MESH'; // 'MESH' or 'SFU'
 
 // 소켓 인스턴스를 컴포넌트 외부에서 한 번만 생성하여 재렌더링 시 재생성을 방지?
-export const SIGNALING_SERVER_URL = `https://192.168.0.37:8000`
+export const SIGNALING_SERVER_URL = `https://192.168.0.30:8000`
 
 // const socket = io(`https://192.168.0.8:8000`, { autoConnect: false });
 const pcConfig: RTCConfiguration = {
@@ -320,7 +320,7 @@ function App() {
                 // setVideoBitrate(peerid, BitrateConfig.min)
 
                 const offer = await pc.createOffer();
-                const newSdp = setMaxBandwidth(offer.sdp || '', 'video', 512); // 비디오 대역폭을 512kbps로 설정
+                const newSdp = setMaxBandwidth(offer.sdp || '', 'video', 51200); // 비디오 대역폭을 51.2Mbps로 설정
                 await pc.setLocalDescription(newSdp ? { type: offer.type, sdp: newSdp } : offer);
                 socketRef.current?.emit('offer', { to: peerid, data: newSdp ? { type: offer.type, sdp: newSdp } : offer });
 
@@ -341,7 +341,7 @@ function App() {
 
             const answer = await pc.createAnswer(); // answer 생성
 
-            const newSdp = setMaxBandwidth(answer.sdp || '', 'video', 100); // 비디오 대역폭 설정
+            const newSdp = setMaxBandwidth(answer.sdp || '', 'video', 10000); // 비디오 대역폭 설정
             await pc.setLocalDescription(newSdp ? { type: answer.type, sdp: newSdp } : answer);
             // await pc.setLocalDescription(answer);
             // socketRef.current?.emit('answer', { to: from, data: answer });
@@ -400,7 +400,6 @@ function App() {
                 const rd = pc.remoteDescription
                 if (!rd) {
                     console.log("[Peer/Test] pc's remoteDescription is Null");
-
                 } else {
                     console.log("[Peer/Test] remoteDescription detected. ICECandidate is added");
                 }
@@ -417,7 +416,7 @@ function App() {
                 setUsers(prev => prev.filter(u => u.id !== peerId));
             }
         });
-
+        /*
         return () => {
             if (socketRef.current) {
                 socketRef.current.disconnect();
@@ -427,7 +426,44 @@ function App() {
                 delete pcsRef.current[key];
             });
         };
+        */
 
+        // Cleanup 로직 수정
+        return () => {
+            console.log('[App] Cleaning up resources...');
+
+            // 소켓 연결 종료
+            if (socketRef.current) {
+                socketRef.current.disconnect();
+                // socketRef.current = null; // 필요 시 제거
+            }
+
+            // 카메라/마이크 하드웨어 장치 끄기
+            if (localStreamRef.current) {
+                localStreamRef.current.getTracks().forEach(track => {
+                    track.stop(); // 하드웨어 리소스 반환
+                });
+                localStreamRef.current = null;
+            }
+
+            // 모든 PeerConnection 종료 및 이벤트 리스너 제거
+            if (pcsRef.current) {
+                Object.keys(pcsRef.current).forEach((key) => {
+                    const pc = pcsRef.current[key];
+                    if (pc) {
+                        // 이벤트 핸들러 해제 (GC 도움)
+                        pc.onicecandidate = null;
+                        pc.ontrack = null;
+                        pc.oniceconnectionstatechange = null;
+
+                        // 연결 종료
+                        pc.close();
+                        console.log(`[App] Closed connection with ${key}`);
+                    }
+                    delete pcsRef.current[key];
+                });
+            }
+        };
     }, []);
 
     // useCallback을 사용하여 createPeerConnection 함수를 메모이제이션
@@ -522,7 +558,7 @@ function App() {
             else if (pc.connectionState === 'connected') {
                 console.log(`[${peerId}] Connection established successfully.changeCount:${changeCount}`);
                 if (changeCount === 0) {
-                    // changeStream();
+                    changeStream(); /////////////////////
                     changeCount++;
                 }
                 pc.getStats().then(stats => {
