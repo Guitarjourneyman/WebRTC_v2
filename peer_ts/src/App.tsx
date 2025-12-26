@@ -445,15 +445,13 @@ function App() {
             }
         });
 
-        socketRef.current.on('disconnect', (peerId: string) => {
+        socketRef.current.on('disconnected', (peerId: string) => {
             console.log(`[Peer] Peer ${peerId} disconnected.`);
-            /*
             if (pcsRef.current[peerId]) {
                 pcsRef.current[peerId].close();
                 delete pcsRef.current[peerId];
                 setUsers(prev => prev.filter(u => u.id !== peerId));
             }
-            */
         });
         /*
         return () => {
@@ -512,8 +510,6 @@ function App() {
     const createPeerConnection = useCallback((peerId: string, type: string): RTCPeerConnection => {
 
         console.log(`[Peer] createPeerConnection ${peerId}`);
-
-        pcTypesRef.current[peerId] = type;
         const pc = new RTCPeerConnection(pcConfig);
         // const pc = new RTCPeerConnection(config);
 
@@ -568,78 +564,45 @@ function App() {
         pc.onconnectionstatechange = async () => {
             console.log(`[${peerId}] state:`, pc.connectionState);
 
-            if (pc.connectionState === 'disconnected' || pc.connectionState === 'closed') {
-                console.log(`[${peerId}] Connection ${pc.connectionState}.`);
-                const pcType = pcTypesRef.current[peerId];
-                // 재연결 시도 join-redial for recvonly connections
-                if (pcType === 'recvonly') {
-                    const targetPc = pcsRef.current[peerId];
-                    console.log(`[${peerId}] recvonly connection lost. Attempting redial.`);
-                    if (targetPc) {
-                        // targetPc.close();
-                        // delete pcsRef.current[peerId];
-                    }
-                    // delete pcTypesRef.current[peerId];
-                    pendingCandRef.current[peerId] = [];// candidate flush
-                    // setUsers(prev => prev.filter(u => u.id !== peerId));
+            if (pc.connectionState === 'failed') {
+                // 재연결 시도(pc.restartIce();? 하드리셋 or 소프트 리셋)
+                console.log(`[${peerId}] Connection failed. Attempting to restart ICE...`);
+                try {
+                    // console.log(`[${peerId}] Soft Resetting...`);
+                    // console.log(`[${peerId}] Hard Resetting...`);
+                    // await softReset(peerId);
+                    // candidate flush
 
-                    renegotiateSamePc(peerId);
+                    pendingCandRef.current[peerId] = []
 
+                    // await hardReset(peerId);
 
+                    /* 1029 추가 : 연결 실패 했을 때 담아두었던 candidate배열 다시 전송*/
+                    sendIceCandidate(peerId);
+                }
+                catch (e) {
+                    // hardReset
+                    console.error(e);
                 }
             }
-            else if (pc.connectionState === 'failed') {
-                // 재연결 시도 하드리셋
-                // console.log(`[${peerId}] Connection failed. Attempting to restart ICE...`);
-                const pcType = pcTypesRef.current[peerId];
-                if (pcType === 'recvonly') {
-                    try {
-                        const targetPc = pcsRef.current[peerId];
-                        console.log(`[${peerId}] recvonly connection lost. Attempting redial.`);
-                        if (targetPc) {
-                            targetPc.close();
-                            delete pcsRef.current[peerId];
-                            delete pcTypesRef.current[peerId];
-                            pendingCandRef.current[peerId] = [];
-                            setUsers(prev => prev.filter(u => u.id !== peerId));
-                        }
-                        else {
-                            console.log(`[${peerId}] No existing peer connection found for hard reset.`);
-                        }
-                        // console.log(`[${peerId}] recvonly connection failed. Attempting hard reset.`);
-                        // candidate flush
-
-                        // console.log(`[${peerId}] Soft Resetting...`);                    // console.log(`[${peerId}] Hard Resetting...`);
-                        // await softReset(peerId);
-                        // candidate flush
-                        console.log(`[${peerId}] Hard Resetting...`);
-                        socketRef.current?.emit('join', { room: room, type: 'redial' });
-                        // await hardReset(peerId);
-                        /* 1029 추가 : 연결 실패 했을 때 담아두었던 candidate배열 다시 전송*/
-                        // sendIceCandidate(peerId);
-                    }
-                    catch (e) {
-                        // hardReset
-                        console.error(e);
-                    }
-                }
-                else {
-                    console.log(`[${peerId}] Non-recvonly connection failed. Closing peer connection.`);
-                    pendingCandRef.current[peerId] = []
-                }
-
+            else if (pc.connectionState === 'disconnected' || pc.connectionState === 'closed') {
+                console.log(`[${peerId}] Connection ${pc.connectionState}. Closing peer connection.`);
+                pc.close();
+                delete pcsRef.current[peerId];
+                // candidate flush
+                pendingCandRef.current[peerId] = []
             }
             else if (pc.connectionState === 'connected') {
                 console.log(`[${peerId}] Connection established successfully.changeCount:${changeCount}`);
                 if (changeCount === 0) {
-                    // changeStream();
+                    changeStream(); /////////////////////
                     changeCount++;
                 }
-                // pc.getStats().then(stats => {
-                //     stats.forEach(report => {
-                //         console.log(`[${peerId}] Stats Report:`, report);
-                //     });
-                // });
+                pc.getStats().then(stats => {
+                    stats.forEach(report => {
+                        console.log(`[${peerId}] Stats Report:`, report);
+                    });
+                });
             }
         };
 
