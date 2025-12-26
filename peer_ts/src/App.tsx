@@ -74,24 +74,19 @@ const config = {};
 function App() {
     console.log('Rendering... ');
     let changeCount = 0;
-    const room = 'testRoom'; // Example room name
+    // const room = 'testRoom'; // Example room name
 
     // Record<<K,T> : TS utility type
 
     /* UseRef 사용하지 않으면 랜더링시 초기화 문제 발생 */
     const socketRef = useRef<SocketIOClient.Socket | null>(null);
-    const pcsRef = useRef<Record<string, RTCPeerConnection>>({});
+    const pcsRef = useRef<Record<string, RTCPeerConnection>>({}); // peerId를 키(Key)로 하여 여러 명과의 연결 객체를 관리하고 있음
+
     /* Others candidates against me */
     const pendingCandRef = useRef<Record<string, RTCIceCandidate[]>>({});
+
     /* My candidates against others */
     const iceCandidateGatheredArrayRef = useRef<Record<string, RTCIceCandidate[]>>({});
-    /* Peer connection types (e.g., 'recvonly' | 'sendonly') */
-    const pcTypesRef = useRef<Record<string, string>>({});
-    /* hardReset ref to allow calling the useCallback-defined hardReset from handlers
-        that are created earlier (createPeerConnection captures this ref). */
-    const hardResetRef = useRef<((peerid: string) => Promise<void>) | null>(null);
-    // pc Close Test 용 버튼 
-    const forceDisconnectPeerRef = useRef<(peerId: string) => boolean>(() => false);
 
     // const pcRef = useRef<RTCPeerConnection>(null);
     const localStreamRef = useRef<MediaStream>(null);
@@ -421,7 +416,7 @@ function App() {
         });
         */
 
-        // [수정] candidate 개별 수신 이벤트
+        // 수정된 candidate 개별 수신 이벤트
         socketRef.current.on('candidate', async ({ from, data }: { from: string, data: any }) => {
             const pc = pcsRef.current[from];
             if (!pc || !data.candidate) return;
@@ -732,86 +727,6 @@ function App() {
     //     }
 
     // }, [socket, myid, setUsers]);
-
-    const renegotiateSamePc = useCallback(async (peerId: string) => {
-        const pc = pcsRef.current[peerId];
-        const socket = socketRef.current;
-        if (!pc || !socket) return;
-        try {
-
-            // signalingState가 안정적일 때만 시도하는 게 안전함
-            if (pc.signalingState !== "stable") {
-                console.log(`[${peerId}] signalingState=${pc.signalingState}, waiting for stable.`);
-                // 필요하면 여기서 일정 시간 후 재시도하도록 해도 됨
-                return;
-            }
-
-            console.log(`[${peerId}] Recreating offer (iceRestart=true) on same pc...`);
-
-            // 핵심: 같은 pc에서 ICE restart + offer 재생성
-            const offer = await pc.createOffer({ iceRestart: true });
-
-            // 너가 쓰던 SDP bandwidth 제한 로직 유지 가능
-            const newSdp = setMaxBandwidth(offer.sdp || '', 'video', 512000);
-            const localDesc = newSdp ? { type: offer.type, sdp: newSdp } : offer;
-
-            await pc.setLocalDescription(localDesc);
-
-            // 서버로 offer 전송 (기존 이벤트명 유지)
-            socket.emit('offer', { to: peerId, data: localDesc });
-            console.log(`[${peerId}] Renegotiation offer sent.`);
-        } catch (e) {
-            console.error(`[${peerId}] renegotiation failed`, e);
-        }
-    }, []);
-
-    const forceDisconnectPeer = (peerId: string) => {
-        const pc = pcsRef.current[peerId];
-        if (!pc) {
-            console.warn(`[forceDisconnectPeer] no pc for peerId=${peerId}`);
-            return false;
-        }
-
-        try {
-            // 이벤트 핸들러 제거 (중복 cleanup/메모리 누수 방지)
-            // pc.onicecandidate = null;
-            // pc.ontrack = null;
-            // pc.onconnectionstatechange = null;
-            // pc.oniceconnectionstatechange = null;
-            // pc.onsignalingstatechange = null;
-
-            // 연결 강제 종료
-            pc.close();
-        } catch (e) {
-            console.error(`[forceDisconnectPeer] error closing pc for ${peerId}`, e);
-        }
-
-        // 레퍼런스/상태 정리
-        // delete pcsRef.current[peerId];
-        // delete pcTypesRef.current[peerId];
-        // if (pendingCandRef.current) pendingCandRef.current[peerId] = [];
-
-        // setUsers(prev => prev.filter(u => u.id !== peerId));
-
-        console.log(`[forceDisconnectPeer] disconnected peerId=${peerId}`);
-        return true;
-    };
-    forceDisconnectPeerRef.current = forceDisconnectPeer;
-
-    useEffect(() => {
-        // 디버그용 전역 노출
-        (window as any).forceDisconnectPeer = (peerId: string) => {
-            return forceDisconnectPeerRef.current(peerId);
-        };
-
-        // (선택) 현재 pcsRef도 보고 싶으면 같이 노출
-        (window as any).pcsRef = pcsRef;
-
-        return () => {
-            delete (window as any).forceDisconnectPeer;
-            delete (window as any).pcsRef;
-        };
-    }, []);
 
     return (
         <div style={{ padding: 16, fontFamily: "system-ui, sans-serif" }}>
