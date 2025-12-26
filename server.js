@@ -150,7 +150,7 @@ io.on('connection', socket => {
         if (room && rooms.has(room)) {
             const peer = rooms.get(room);
             peer.delete(id);
-            socket.to(room).emit('disconnected', id);
+            socket.to(room).emit('disconnect', id);
             console.log(`[Server] Peer ${id} disconnected from room ${room}`);
         }
         peers.delete(id);                        // 핵심
