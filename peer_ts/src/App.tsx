@@ -28,6 +28,8 @@ const BitrateConfig: Record<BitrateLevel, number> = {
     max: 2000000,  // 2 Mbps
 };
 
+const BITRATE: number = 10000; // 10 Mbps
+
 const displayMediaOptions = {
     video: {
         displaySurface: "monitor", // browser 브라우저 탭 우선적으로 선택
@@ -321,7 +323,7 @@ function App() {
                 // setVideoBitrate(peerid, BitrateConfig.min)
 
                 const offer = await pc.createOffer();
-                const newSdp = setMaxBandwidth(offer.sdp || '', 'video', 51200); // 비디오 대역폭을 51.2Mbps로 설정
+                const newSdp = setMaxBandwidth(offer.sdp || '', 'video', BITRATE); // if BITRATE = 51200 = 비디오 대역폭을 51.2Mbps로 설정
                 await pc.setLocalDescription(newSdp ? { type: offer.type, sdp: newSdp } : offer);
                 socketRef.current?.emit('offer', { to: peerid, data: newSdp ? { type: offer.type, sdp: newSdp } : offer });
 
@@ -345,7 +347,7 @@ function App() {
 
             const answer = await pc.createAnswer(); // answer 생성
 
-            const newSdp = setMaxBandwidth(answer.sdp || '', 'video', 10000); // 비디오 대역폭 설정
+            const newSdp = setMaxBandwidth(answer.sdp || '', 'video', BITRATE); // 비디오 대역폭 설정. if BITRATE = 10000 = 10Mbps
             await pc.setLocalDescription(newSdp ? { type: answer.type, sdp: newSdp } : answer);
             // await pc.setLocalDescription(answer);
             // socketRef.current?.emit('answer', { to: from, data: answer });
