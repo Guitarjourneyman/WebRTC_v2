@@ -427,7 +427,7 @@ function App() {
             if (pc.remoteDescription) {
                 try {
                     await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-                    // console.log(`[Peer] Added ICE candidate from ${from}`);
+                    console.log(`[Peer] Added ICE candidate from ${from}`);
                 } catch (e) {
                     console.warn(`[Peer] Failed to add ICE candidate from ${from}`, e);
                 }
