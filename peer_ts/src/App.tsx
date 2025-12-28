@@ -44,14 +44,6 @@ const displayMediaOptions = {
     monitorTypeSurfaces: "include", // 모니터 유형 화면 포함
 };
 
-const constraints = { // 해상도 및 프레임레이트 제약 설정 프리셋
-    video: {
-        width: { ideal: 854, max: 1280 },
-        height: { ideal: 480, max: 720 },
-        frameRate: { ideal: 15, max: 30 },
-    },
-    audio: true
-};
 
 // 운영 모드 설정
 const MODE: string = 'MESH'; // '1_TO_N' or 'MESH'
@@ -65,11 +57,11 @@ const pcConfig: RTCConfiguration = {
         {
             urls: [
                 'stun:stun.l.google.com:19302',
-                // 'stun:stun1.l.google.com:19302',
-                // 'stun:stun2.l.google.com:19302',
-                // 'stun:stun3.l.google.com:19302',
-                // 'stun:stun4.l.google.com:19302',
-                // 'stun:23.21.150.121:3478',
+                'stun:stun1.l.google.com:19302',
+                'stun:stun2.l.google.com:19302',
+                'stun:stun3.l.google.com:19302',
+                'stun:stun4.l.google.com:19302',
+                'stun:23.21.150.121:3478',
 
             ]
         },
@@ -101,15 +93,14 @@ function App() {
     const localVideoRef = useRef<HTMLVideoElement>(null);
     const myidRef = useRef<string>('');
     const localStreamSortRef = useRef<string>('userMedia');
-    const hasStreamChangedRef = useRef<boolean>(false);
-    // user 상태 관리
-    const [users, setUsers] = useState<WebRTCUser[]>([]);
-    const [myid, setMyid] = useState<string>('');
-
     // Offerer / Answerer 구분 저장
     const pcTypesRef = useRef<Record<string, string>>({});
     // pc Close Test 용 버튼 
     const forceDisconnectPeerRef = useRef<(peerId: string) => boolean>(() => false);
+
+    // user 상태 관리
+    const [users, setUsers] = useState<WebRTCUser[]>([]);
+    const [myid, setMyid] = useState<string>('');
 
     const setVideoBitrate = useCallback(async (peerId: string, bitrate: number) => {
         const pc = pcsRef.current[peerId];
@@ -212,8 +203,27 @@ function App() {
     const getLocalStream = useCallback(async () => {
         try {
             console.log('getLocalStream....');
-            // localStreamRef.current = (await navigator.mediaDevices.getDisplayMedia(constraints));// 화면 공유
-            localStreamRef.current = (await navigator.mediaDevices.getUserMedia(constraints)); // 카메라
+            // 추후 localStreamRef로 로컬 비디오 컴포넌트에서 사용
+
+            // localStreamRef.current = await navigator.mediaDevices.getDisplayMedia({ // 화면 공유
+            //     video: {
+
+            //         width: { ideal: 480, max: 480 },
+            //         height: { ideal: 320, max: 320 },
+            //         frameRate: { ideal: 30, max: 30 },
+            //     },
+            //     audio: true
+            // });
+
+            localStreamRef.current = (await navigator.mediaDevices.getUserMedia({ // 카메라
+                video: {
+
+                    width: { ideal: 720, max: 1920 },
+                    height: { ideal: 480, max: 1080 },
+                    frameRate: { ideal: 30, max: 60 },
+                },
+                audio: true
+            }));
 
             if (localVideoRef.current) {
                 localVideoRef.current.srcObject = localStreamRef.current;
@@ -235,7 +245,14 @@ function App() {
 
         if (localStreamSortRef.current === 'userMedia') {
             console.log(`[Peer] Current stream is not a display source. Changing stream...`);
-            localStreamRef.current = await navigator.mediaDevices.getDisplayMedia(constraints);
+            localStreamRef.current = await navigator.mediaDevices.getDisplayMedia({
+                video: {
+                    width: { ideal: 854, max: 1280 },
+                    height: { ideal: 480, max: 720 },
+                    frameRate: { ideal: 15, max: 30 },
+                },
+                audio: true
+            });
 
             // localStreamRef.current = (await navigator.mediaDevices.getUserMedia({ video: true, audio: true }));
 
@@ -312,10 +329,8 @@ function App() {
                 const newSdp = setMaxBandwidth(offer.sdp || '', 'video', BITRATE); // if BITRATE = 51200 = 비디오 대역폭을 51.2Mbps로 설정
                 await pc.setLocalDescription(newSdp ? { type: offer.type, sdp: newSdp } : offer);
                 socketRef.current?.emit('offer', { to: peerid, data: newSdp ? { type: offer.type, sdp: newSdp } : offer });
-
                 // peerid에 대해서 내가 offer 보냄 -> Offerer 기록
                 pcTypesRef.current[peerid] = 'offerer';
-
                 console.log(`[Peer] Sent Offer to ${peerid}`, newSdp ? { type: offer.type, sdp: newSdp } : offer);
 
                 // 20명 연결 시 부하 분산을 위해 100ms 지연
@@ -344,11 +359,8 @@ function App() {
             // await pc.setLocalDescription(answer);
             // socketRef.current?.emit('answer', { to: from, data: answer });
             socketRef.current?.emit('answer', { to: from, data: newSdp ? { type: answer.type, sdp: newSdp } : answer });
-
             // peerid에 대해서 내가 answer 보냄 -> Answerer 기록
             pcTypesRef.current[from] = 'answerer';
-
-            // console.log(`[Peer] Sent Answer to ${from}`,answer);
             console.log(`[Peer] Sent Answer to ${from}`, newSdp ? { type: answer.type, sdp: newSdp } : answer);
         });
 
@@ -375,6 +387,9 @@ function App() {
                     console.log("[Peer/Test] pc's remoteDescription is Null");
                     // data is cadidateArray
                     pendingCandRef.current[from] = data;
+                    return;
+                } else if (pc.signalingState === 'closed') {
+                    console.warn(`[Peer] Ignored ICE candidateArray from ${from} because PC is closed.`)
                     return;
                 } else {
                     console.log("[Peer/Test] remoteDescription detected. ICECandidate is added");
@@ -440,13 +455,7 @@ function App() {
 
         socketRef.current.on('disconnected', (peerId: string) => {
             console.log(`[Peer] Peer ${peerId} disconnected.`);
-            /*
-            if (pcsRef.current[peerId]) {
-                pcsRef.current[peerId].close();
-                delete pcsRef.current[peerId];
-                setUsers(prev => prev.filter(u => u.id !== peerId));
-            }
-            */
+
         });
         /*
         return () => {
@@ -558,14 +567,15 @@ function App() {
         // 연결 상태 모니터링
         pc.onconnectionstatechange = async () => {
             console.log(`[${peerId}] state:`, pc.connectionState);
+
             if (pc.connectionState === 'disconnected' || pc.connectionState === 'closed') {
                 console.log(`[${peerId}] Connection ${pc.connectionState}. ${pcTypesRef.current[peerId]}Attempting renegotiate.`);
                 // 재연결 시도 join-redial for recvonly connections
                 const pcType = pcTypesRef.current[peerId];
-                // Offerer 인지 확인 후 renegotiate 
-                if (pcType === 'offerer') {
-                    renegotiateSamePc(peerId);
-                }
+                // Offerer 인지 확인 후 renegotiate -> Offerer가 죽었을 수도 있으므로 Answerer도 시도
+                // if (pcType === 'offerer') {
+                renegotiateSamePc(peerId);
+                // }
             }
             else if (pc.connectionState === 'failed') {
                 // 재연결 시도(pc.restartIce();? 하드리셋 or 소프트 리셋)
@@ -588,28 +598,18 @@ function App() {
                     console.error(e);
                 }
             }
-            /*
-            else if (pc.connectionState === 'disconnected' || pc.connectionState === 'closed') {
-                console.log(`[${peerId}] Connection ${pc.connectionState}. Closing peer connection.`);
-                pc.close();
-                delete pcsRef.current[peerId];
-                // candidate flush
-                pendingCandRef.current[peerId] = []
-            }
-            */
+
             else if (pc.connectionState === 'connected') {
                 console.log(`[${peerId}] Connection established successfully.changeCount:${changeCount}`);
                 if (changeCount === 0) {
-                    // changeStream(); /////////////////////
+                    // changeStream(); // 스트림 교체 함수 호출 (카메라 -> 화면공유)
                     changeCount++;
                 }
-                /*
-                pc.getStats().then(stats => {
-                    stats.forEach(report => {
-                        console.log(`[${peerId}] Stats Report:`, report);
-                    });
-                });
-                */
+                // pc.getStats().then(stats => {
+                //     stats.forEach(report => {
+                //         console.log(`[${peerId}] Stats Report:`, report);
+                //     });
+                // });
             }
         };
 
@@ -741,9 +741,9 @@ function App() {
         }
 
         // 레퍼런스/상태 정리
-        // delete pcsRef.current[peerId];
-        // delete pcTypesRef.current[peerId];
-        // if (pendingCandRef.current) pendingCandRef.current[peerId] = [];
+        delete pcsRef.current[peerId];
+        delete pcTypesRef.current[peerId];
+        if (pendingCandRef.current) pendingCandRef.current[peerId] = [];
 
         // setUsers(prev => prev.filter(u => u.id !== peerId));
 
