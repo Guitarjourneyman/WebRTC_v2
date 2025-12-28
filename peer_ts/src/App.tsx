@@ -28,7 +28,7 @@ const BitrateConfig: Record<BitrateLevel, number> = {
     max: 2000000,  // 2 Mbps
 };
 
-const BITRATE: number = 500; // 500 kbps. setMaxBandwidth를 이용하는 경우에만 이 값을 적용해야 함. (setVideoBitrate는 기본 단위가 kbps가 아니라 bps임.) 
+const BITRATE: number = 500; // <도근> 500 kbps. setMaxBandwidth를 이용하는 경우에만 이 값을 적용해야 함. (setVideoBitrate는 기본 단위가 kbps가 아니라 bps임.) 
 
 const displayMediaOptions = {
     video: {
@@ -44,7 +44,7 @@ const displayMediaOptions = {
     monitorTypeSurfaces: "include", // 모니터 유형 화면 포함
 };
 
-const constraints = { // 해상도 및 프레임레이트 제약 설정 프리셋
+const constraints = { // <도근> 해상도 및 프레임레이트 제약 설정 프리셋
     video: {
         width: { ideal: 854, max: 1280 },
         height: { ideal: 480, max: 720 },
@@ -54,10 +54,10 @@ const constraints = { // 해상도 및 프레임레이트 제약 설정 프리�
 };
 
 // 운영 모드 설정
-const MODE: string = 'MESH'; // '1_TO_N' or 'MESH'
+const MODE: string = '1_TO_N'; // '1_TO_N' or 'MESH'
 
 // 소켓 인스턴스를 컴포넌트 외부에서 한 번만 생성하여 재렌더링 시 재생성을 방지?
-export const SIGNALING_SERVER_URL = `https://192.168.0.6:8000`
+export const SIGNALING_SERVER_URL = `https://192.168.0.37:8000`
 
 // const socket = io(`https://192.168.0.8:8000`, { autoConnect: false });
 const pcConfig: RTCConfiguration = {
@@ -300,7 +300,7 @@ function App() {
         socketRef.current.on('existing-peers', async (peers: string[]) => { // 이미 방에 있던 사용자들의 목록(existing-peers) 수신 (새로 참여 시)
             console.log('[Peer] Existing peers in room:', peers);
 
-            // Staggered Connection: 순차적으로 연결하여 Signaling Storm 방지
+            // 순차적으로 연결하여 Signaling Storm 방지
             for (const peerid of peers) {
                 console.log('[Peer] createPeerConnection:', peerid);
                 const pc = createPeerConnection(peerid, 'both');
@@ -320,7 +320,7 @@ function App() {
 
                 console.log(`[Peer] Sent Offer to ${peerid}`, newSdp ? { type: offer.type, sdp: newSdp } : offer);
 
-                // 20명 연결 시 부하 분산을 위해 100ms 지연
+                // <도근> 부하 분산을 위해 10ms 지연
                 await new Promise(resolve => setTimeout(resolve, 10));
             }
         });
@@ -336,7 +336,7 @@ function App() {
 
             await pc.setRemoteDescription(new RTCSessionDescription(data));
 
-            // RemoteDescription 설정 직후 대기열 처리!! <추가!!>
+            // RemoteDescription 설정 직후 대기열 처리!! <도근>
             await flushPendingCandidates(from);
 
             const answer = await pc.createAnswer(); // answer 생성
@@ -362,7 +362,7 @@ function App() {
             console.log(`[Peer] Received answer.${from}`, data);
             await pc.setRemoteDescription(new RTCSessionDescription(data));
 
-            // RemoteDescription 설정 직후 대기열 처리!! <추가!!>
+            // RemoteDescription 설정 직후 대기열 처리!! <도근>
             await flushPendingCandidates(from);
         });
 
@@ -397,13 +397,13 @@ function App() {
                         }
                     }
 
-                    
+
                 }
-                
+
             }
         });
 
-  
+
 
         // 수정된 candidate 개별 수신 이벤트
         socketRef.current.on('candidate', async ({ from, data }: { from: string, data: any }) => {
@@ -543,7 +543,7 @@ function App() {
                 }
             }
             else if (pc.connectionState === 'failed') {
-               
+
                 const pcType = pcTypesRef.current[peerId];
                 if (pcType === 'offerer') {
                     try {
@@ -568,6 +568,13 @@ function App() {
                     }
                 }
                 else {
+                    const targetPc = pcsRef.current[peerId];
+                    targetPc.close();
+                    delete pcsRef.current[peerId];
+                    delete pcTypesRef.current[peerId];
+                    pendingCandRef.current[peerId] = [];
+                    iceCandidateGatheredArrayRef.current[peerId] = [];
+                    setUsers(prev => prev.filter(u => u.id !== peerId));
                     console.log(`[${peerId}] Non-offerer connection failed. Closing peer connection.`);
                 }
             }
@@ -641,7 +648,7 @@ function App() {
 
     }, []);
 
-    // 대기 중인 Candidate들을 일괄 처리하는 함수
+    // 대기 중인 Candidate들을 일괄 처리하는 함수 <도근>
     const flushPendingCandidates = async (peerId: string) => {
         const pc = pcsRef.current[peerId];
         const pendingCandidates = pendingCandRef.current[peerId];
