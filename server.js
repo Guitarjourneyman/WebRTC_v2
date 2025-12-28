@@ -77,7 +77,7 @@ io.on('connection', socket => {
 
     });
 
-    socket.on('join', room => {
+    socket.on('join-1_to_n', room => {
         if (!rooms.has(room)) {
             console.log(`[Server] Room ${room} does not exist, creating new room.`);
             rooms.set(room, new Set());

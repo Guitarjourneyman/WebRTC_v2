@@ -5,7 +5,7 @@
     ++ 연결 실패시 Candidate 배열로 송수신 받아 Loop문으로 addIceCandidate 처리
     3. 화면 공유 스트림 교체 기능
     4. 비트레이트 설정 기능
-    5. SFU / MESH 모드 선택 기능
+    5. 1_TO_N / MESH 모드 선택 기능
 
 */
 
@@ -290,8 +290,8 @@ function App() {
         socketRef.current.on('connect', () => { // connect 이벤트 수신 시 
             console.log('[Peer] Connected to signaling server');
             if (MODE === '1_TO_N') {
-                console.log('[Peer] Joining room in SFU mode:', room);
-                socketRef.current?.emit('join', room);
+                console.log('[Peer] Joining room in 1_TO_N mode:', room);
+                socketRef.current?.emit('join-1_to_n', room);
             }
             else if (MODE === 'MESH') {
                 console.log('[Peer] Joining room in MESH mode:', room);
@@ -329,7 +329,7 @@ function App() {
                 console.log(`[Peer] Sent Offer to ${peerid}`, newSdp ? { type: offer.type, sdp: newSdp } : offer);
 
                 // 20명 연결 시 부하 분산을 위해 100ms 지연
-                await new Promise(resolve => setTimeout(resolve, 100));
+                await new Promise(resolve => setTimeout(resolve, 10));
             }
         });
 
