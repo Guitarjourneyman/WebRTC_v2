@@ -45,10 +45,8 @@ const displayMediaOptions = {
 };
 
 
-
-
 // 운영 모드 설정
-const MODE: string = 'MESH'; // 'MESH' or 'SFU'
+const MODE: string = 'MESH'; // '1_TO_N' or 'MESH'
 
 // 소켓 인스턴스를 컴포넌트 외부에서 한 번만 생성하여 재렌더링 시 재생성을 방지?
 export const SIGNALING_SERVER_URL = `https://192.168.0.30:8000`
@@ -291,13 +289,13 @@ function App() {
 
         socketRef.current.on('connect', () => { // connect 이벤트 수신 시 
             console.log('[Peer] Connected to signaling server');
-            if (MODE === 'SFU') {
+            if (MODE === '1_TO_N') {
                 console.log('[Peer] Joining room in SFU mode:', room);
-                socketRef.current?.emit('join-sfu', room);
+                socketRef.current?.emit('join', room);
             }
             else if (MODE === 'MESH') {
                 console.log('[Peer] Joining room in MESH mode:', room);
-                socketRef.current?.emit('join', room);
+                socketRef.current?.emit('join-mesh', room);
             }
         });
 
