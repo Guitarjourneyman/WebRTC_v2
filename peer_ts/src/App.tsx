@@ -49,7 +49,7 @@ const displayMediaOptions = {
 const MODE: string = 'MESH'; // '1_TO_N' or 'MESH'
 
 // 소켓 인스턴스를 컴포넌트 외부에서 한 번만 생성하여 재렌더링 시 재생성을 방지?
-export const SIGNALING_SERVER_URL = `https://192.168.0.30:8000`
+export const SIGNALING_SERVER_URL = `https://192.168.0.37:8000`
 
 // const socket = io(`https://192.168.0.8:8000`, { autoConnect: false });
 const pcConfig: RTCConfiguration = {
@@ -243,9 +243,9 @@ function App() {
             console.log(`[Peer] Current stream is not a display source. Changing stream...`);
             localStreamRef.current = await navigator.mediaDevices.getDisplayMedia({
                 video: {
-                    width: { ideal: 1280, max: 1920 },
-                    height: { ideal: 720, max: 1080 },
-                    frameRate: { ideal: 30, max: 60 },
+                    width: { ideal: 854, max: 1280 },
+                    height: { ideal: 480, max: 720 },
+                    frameRate: { ideal: 15, max: 30 },
                 },
                 audio: true
             });
@@ -308,10 +308,11 @@ function App() {
         });
 
 
-        socketRef.current.on('existing-peers', (peers: Record<string, any>) => { // 이미 방에 있던 사용자들의 목록(existing-peers) 수신 (새로 참여 시)
+        socketRef.current.on('existing-peers', async (peers: string[]) => { // 이미 방에 있던 사용자들의 목록(existing-peers) 수신 (새로 참여 시)
             console.log('[Peer] Existing peers in room:', peers);
 
-            peers.forEach(async (peerid: string) => { // 기존의 모든 참여자들에게 각각 RTCPeerConnection을 생성하고, Offer를 보냄
+            // Staggered Connection: 순차적으로 연결하여 Signaling Storm 방지
+            for (const peerid of peers) {
                 console.log('[Peer] createPeerConnection:', peerid);
                 const pc = createPeerConnection(peerid, 'both');
                 // Store the peer connection in the ref
@@ -326,7 +327,10 @@ function App() {
                 socketRef.current?.emit('offer', { to: peerid, data: newSdp ? { type: offer.type, sdp: newSdp } : offer });
 
                 console.log(`[Peer] Sent Offer to ${peerid}`, newSdp ? { type: offer.type, sdp: newSdp } : offer);
-            });
+
+                // 20명 연결 시 부하 분산을 위해 100ms 지연
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
         });
 
 
