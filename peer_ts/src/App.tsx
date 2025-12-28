@@ -28,7 +28,7 @@ const BitrateConfig: Record<BitrateLevel, number> = {
     max: 2000000,  // 2 Mbps
 };
 
-const BITRATE: number = 10000; // 10 Mbps
+const BITRATE: number = 500; // 500 kbps. setMaxBandwidth를 이용하는 경우에만 이 값을 적용해야 함. (setVideoBitrate는 기본 단위가 kbps가 아니라 bps임.) 
 
 const displayMediaOptions = {
     video: {
