@@ -568,9 +568,9 @@ function App() {
                 // 재연결 시도 join-redial for recvonly connections
                 const pcType = pcTypesRef.current[peerId];
                 // Offerer 인지 확인 후 renegotiate 
-                if (pcType === 'offerer') {
-                    renegotiateSamePc(peerId);
-                }
+                //if (pcType === 'offerer') {
+                renegotiateSamePc(peerId);
+                //}
             }
             else if (pc.connectionState === 'failed') {
                 // 재연결 시도(pc.restartIce();? 하드리셋 or 소프트 리셋)
