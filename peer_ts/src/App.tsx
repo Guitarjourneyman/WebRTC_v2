@@ -57,7 +57,7 @@ const constraints = { // 해상도 및 프레임레이트 제약 설정 프리�
 const MODE: string = 'MESH'; // '1_TO_N' or 'MESH'
 
 // 소켓 인스턴스를 컴포넌트 외부에서 한 번만 생성하여 재렌더링 시 재생성을 방지?
-export const SIGNALING_SERVER_URL = `https://192.168.0.37:8000`
+export const SIGNALING_SERVER_URL = `https://192.168.0.6:8000`
 
 // const socket = io(`https://192.168.0.8:8000`, { autoConnect: false });
 const pcConfig: RTCConfiguration = {
@@ -101,7 +101,7 @@ function App() {
     const localVideoRef = useRef<HTMLVideoElement>(null);
     const myidRef = useRef<string>('');
     const localStreamSortRef = useRef<string>('userMedia');
-    const hasStreamChangedRef = useRef<boolean>(false);
+
     // user 상태 관리
     const [users, setUsers] = useState<WebRTCUser[]>([]);
     const [myid, setMyid] = useState<string>('');
@@ -343,8 +343,7 @@ function App() {
 
             const newSdp = setMaxBandwidth(answer.sdp || '', 'video', BITRATE); // 비디오 대역폭 설정. if BITRATE = 10000 = 10Mbps
             await pc.setLocalDescription(newSdp ? { type: answer.type, sdp: newSdp } : answer);
-            // await pc.setLocalDescription(answer);
-            // socketRef.current?.emit('answer', { to: from, data: answer });
+
             socketRef.current?.emit('answer', { to: from, data: newSdp ? { type: answer.type, sdp: newSdp } : answer });
 
             // peerid에 대해서 내가 answer 보냄 -> Answerer 기록
@@ -398,28 +397,13 @@ function App() {
                         }
                     }
 
-                    // await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                    
                 }
-                // await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                
             }
         });
 
-        // 수신 측. 개별 수신
-        /*
-        socketRef.current.on('candidate', async ({ from, data }: { from: string, data: any }) => {
-            const pc = pcsRef.current[from];
-            if (pc) {
-                console.log('[Peer/Test] ICE candidate event:', data.candidate);
-                const rd = pc.remoteDescription
-                if (!rd) {
-                    console.log("[Peer/Test] pc's remoteDescription is Null");
-                } else {
-                    console.log("[Peer/Test] remoteDescription detected. ICECandidate is added");
-                }
-                await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-            }
-        });
-        */
+  
 
         // 수정된 candidate 개별 수신 이벤트
         socketRef.current.on('candidate', async ({ from, data }: { from: string, data: any }) => {
@@ -455,18 +439,6 @@ function App() {
             }
             */
         });
-        /*
-        return () => {
-            if (socketRef.current) {
-                socketRef.current.disconnect();
-            }
-            Object.keys(pcsRef.current).forEach((key) => {
-                pcsRef.current[key].close();
-                delete pcsRef.current[key];
-            });
-        };
-        */
-
         // Cleanup 로직 수정
         return () => {
             console.log('[App] Cleaning up resources...');
@@ -549,11 +521,6 @@ function App() {
                 socket.emit('candidate', { to: peerId, data: { type: 'candidate', candidate: event.candidate } });
 
                 iceCandidateGatheredArrayRef.current[peerId].push(event.candidate); // 수집된 Candidate를 배열에 저장
-
-                // console.log(`[Peer] ICE candidate gathering state: ${pc.iceGatheringState}`);
-                // console.log(`[Peer] ICE candidate gathered`);
-                // console.log('[Peer] Sending ICE candidate...', event.candidate);
-                // socketRef.current?.emit('candidate', { to: peerId, data: { type: 'candidate', candidate: event.candidate } });
             }
         };
 
@@ -576,21 +543,7 @@ function App() {
                 }
             }
             else if (pc.connectionState === 'failed') {
-                /*
-                // 재연결 시도
-                console.log(`[${peerId}] Connection failed. Attempting to restart ICE...`);
-                try {
-                    pendingCandRef.current[peerId] = []
-                    // 1029 추가 : 연결 실패 했을 때 담아두었던 candidate배열 다시 전송
-                    sendIceCandidate(peerId);
-                }
-                catch (e) {
-                    console.error(e);
-                }
-                */
-
-                // 재연결 시도 Redial
-                // console.log(`[${peerId}] Connection failed. Attempting to restart ICE...`);
+               
                 const pcType = pcTypesRef.current[peerId];
                 if (pcType === 'offerer') {
                     try {
@@ -618,15 +571,7 @@ function App() {
                     console.log(`[${peerId}] Non-offerer connection failed. Closing peer connection.`);
                 }
             }
-            /*
-            else if (pc.connectionState === 'disconnected' || pc.connectionState === 'closed') {
-                console.log(`[${peerId}] Connection ${pc.connectionState}. Closing peer connection.`);
-                pc.close();
-                delete pcsRef.current[peerId];
-                // candidate flush
-                pendingCandRef.current[peerId] = []
-            }
-            */
+
             else if (pc.connectionState === 'connected') {
                 console.log(`[${peerId}] Connection established successfully.changeCount:${changeCount}`);
                 if (changeCount === 0) {
@@ -670,7 +615,6 @@ function App() {
             console.log(`[Peer] ICE gathering state changed: ${pc.iceGatheringState}`);
             if (pc.iceGatheringState === 'complete') {
                 console.log(`[Peer] ICE gathering complete for ${peerId}. Total candidates gathered: ${iceCandidateGatheredArrayRef.current[peerId]?.length}`);
-                // sendIceCandidate(peerId);
             }
         }
 
@@ -694,7 +638,6 @@ function App() {
             socketRef.current?.emit('candidateArray', { to: peerId, data: candArray });
             console.log(`[Peer] Sent ${candArray.length} ICE candidates to ${peerId}`);
         }
-        // iceCandidateGatheredArrayRef.current[peerId].splice(0, iceCandidateGatheredArrayRef.current[peerId].length); // 배열 초기화
 
     }, []);
 
@@ -757,13 +700,6 @@ function App() {
         }
 
         try {
-            // 이벤트 핸들러 제거 (중복 cleanup/메모리 누수 방지)
-            // pc.onicecandidate = null;
-            // pc.ontrack = null;
-            // pc.onconnectionstatechange = null;
-            // pc.oniceconnectionstatechange = null;
-            // pc.onsignalingstatechange = null;
-
             // 연결 강제 종료
             pc.close();
         } catch (e) {
@@ -782,6 +718,40 @@ function App() {
     };
     forceDisconnectPeerRef.current = forceDisconnectPeer;
 
+    // 모든 PeerConnection을 종료하는 함수
+    const reset = useCallback(async () => {
+        console.log(`[RESET] Disconnecting all ${Object.keys(pcsRef.current).length} peers...`);
+        // 시그널링 서버에 연결 종료 알림
+        socketRef.current?.emit('disconnect_reset');
+        // 소켓 연결 종료
+        if (socketRef.current) {
+            socketRef.current.disconnect();
+            // socketRef.current = null; // 필요 시 제거
+        }
+        const peerIds = Object.keys(pcsRef.current);
+        let disconnectedCount = 0;
+
+        peerIds.forEach(peerId => {
+            if (forceDisconnectPeerRef.current(peerId)) {
+                disconnectedCount++;
+            }
+        });
+
+        // pcsRef 초기화
+        pcsRef.current = {};
+        pcTypesRef.current = {};
+        pendingCandRef.current = {};
+        iceCandidateGatheredArrayRef.current = {};
+
+        // 사용자 목록 초기화
+        setUsers([]);
+        console.log(`[RESET] Successfully disconnected ${disconnectedCount} peers`);
+        // 3s 지연
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        socketRef.current?.connect(); // 스트림 획득 후 소켓 연결
+        return disconnectedCount;
+    }, []);
+
     useEffect(() => {
         // 디버그용 전역 노출
         (window as any).forceDisconnectPeer = (peerId: string) => {
@@ -790,12 +760,14 @@ function App() {
 
         // (선택) 현재 pcsRef도 보고 싶으면 같이 노출
         (window as any).pcsRef = pcsRef;
+        (window as any).disconnectAllPeers = reset;
 
         return () => {
             delete (window as any).forceDisconnectPeer;
             delete (window as any).pcsRef;
+            delete (window as any).disconnectAllPeers;
         };
-    }, []);
+    }, [reset]);
 
     return (
         <div style={{ padding: 16, fontFamily: "system-ui, sans-serif" }}>
@@ -825,6 +797,7 @@ function App() {
                     {myid}
                 </div>
                 <button onClick={() => (changeStream())}>Change Stream</button>
+                <button onClick={() => reset()} style={{ marginLeft: 8, backgroundColor: '#ff4444', color: 'white', padding: '6px 12px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>RESET</button>
             </div>
 
 

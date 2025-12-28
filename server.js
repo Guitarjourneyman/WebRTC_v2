@@ -22,8 +22,6 @@ httpsServer.listen(8000, '0.0.0.0', () => {
 });
 
 /* 외부 접속시 https://192.168.0.3:8000 when opening html */
-// const WebSocket = require('ws');
-// const server = new WebSocket.Server({ port: 8000 , host: '0.0.0.0'});
 
 const { Server } = require('socket.io');
 const io = new Server(httpsServer, {
@@ -164,6 +162,17 @@ io.on('connection', socket => {
     })
 
     socket.on('disconnect', () => {
+        const room = socket.data.room;
+        if (room && rooms.has(room)) {
+            const peer = rooms.get(room);
+            peer.delete(id);
+            socket.to(room).emit('disconnected', id);
+            console.log(`[Server] Peer ${id} disconnected from room ${room}`);
+        }
+        peers.delete(id);                        // 핵심
+    });
+
+    socket.on('disconnect_reset', () => {
         const room = socket.data.room;
         if (room && rooms.has(room)) {
             const peer = rooms.get(room);
