@@ -304,7 +304,7 @@ function App() {
             for (const peerid of peers) {
                 console.log('[Peer] createPeerConnection:', peerid);
 
-                // <Fix>: Prevent duplicate connection creation if already exists
+                // <도근> Prevent duplicate connection creation if already exists
                 if (pcsRef.current[peerid]) {
                     console.warn(`[Peer] Connection to ${peerid} already exists. Skipping duplicate existing-peers event.`);
                     continue;
