@@ -46,9 +46,9 @@ const displayMediaOptions = {
 
 const constraints = { // <도근> 해상도 및 프레임레이트 제약 설정 프리셋
     video: {
-        width: { ideal: 854, max: 1280 },
-        height: { ideal: 480, max: 720 },
-        frameRate: { ideal: 15, max: 30 },
+        width: { ideal: 1920, max: 1920 },//{ ideal: 854, max: 1280 },
+        height: { ideal: 1080, max: 1080 },//{ ideal: 480, max: 720 },
+        frameRate: { ideal: 30, max: 30 },//{ ideal: 15, max: 30 },
     },
     audio: true
 };
