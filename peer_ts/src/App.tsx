@@ -57,7 +57,7 @@ const constraints = { // <도근> 해상도 및 프레임레이트 제약 설정
 const MODE: string = '1_TO_N'; // '1_TO_N' or 'MESH'
 
 // 소켓 인스턴스를 컴포넌트 외부에서 한 번만 생성하여 재렌더링 시 재생성을 방지?
-export const SIGNALING_SERVER_URL = `https://192.168.0.6:8000`
+export const SIGNALING_SERVER_URL = `https://192.168.0.37:8000`
 
 // const socket = io(`https://192.168.0.8:8000`, { autoConnect: false });
 const pcConfig: RTCConfiguration = {
@@ -303,6 +303,13 @@ function App() {
             // 순차적으로 연결하여 Signaling Storm 방지
             for (const peerid of peers) {
                 console.log('[Peer] createPeerConnection:', peerid);
+
+                // <Fix>: Prevent duplicate connection creation if already exists
+                if (pcsRef.current[peerid]) {
+                    console.warn(`[Peer] Connection to ${peerid} already exists. Skipping duplicate existing-peers event.`);
+                    continue;
+                }
+
                 const pc = createPeerConnection(peerid, 'both');
                 // Store the peer connection in the ref
                 pcsRef.current[peerid] = pc;
