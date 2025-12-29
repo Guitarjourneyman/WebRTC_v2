@@ -38,6 +38,7 @@ io.on('connection', socket => {
     const id = Math.random().toString(36).substr(2, 9); // generate random ID
     peers.set(id, socket);
     console.log(`[Server] New connection: ${id}`);
+    let count = 0;
 
     socket.on('join', ({ room, type, to }) => {
         // =========================
@@ -52,7 +53,12 @@ io.on('connection', socket => {
         socket.join(room);
 
         // 본인 id 전송 0906
-        socket.emit('my-id', id);
+
+        console.log(`[Server] Emitting my-id: ${id}`);
+        if (count === 0) {
+            socket.emit('my-id', id);
+            count++;
+        }
 
         // =========================
         // type 분기
@@ -63,7 +69,7 @@ io.on('connection', socket => {
 
             // 기존 참가자 목록 전송  (나 자신 제외)
             const existingPeers = [...peers.keys()].filter(peerId => peerId !== id);
-            console.log(`[Server] Existing peers in room ${room}:`, existingPeers);
+            console.log(`[Server] (Mesh) Existing peers in room ${room}:`, existingPeers);
             socket.emit('existing-peers', existingPeers);
 
         }
@@ -74,14 +80,14 @@ io.on('connection', socket => {
             if (peers.size > 1) {
                 const allKeys = [...peers.keys()]; // 모든 키를 배열로 변환
                 const firstKey = allKeys[0];      // 배열의 첫 번째 요소 접근
-                console.log(`[Server] First peer in room ${room} `, firstKey);
+                console.log(`[Server] (1_to_n) First peer in room ${room} `, firstKey);
                 existingPeers.push(firstKey);
             }
             else if (peers.size <= 1) {
-                console.log(`[Server] No existing peers in room ${room}`);
+                console.log(`[Server] (1_to_n) No existing peers in room ${room}`);
             }
 
-            console.log(`[Server] Existing peers in room ${room}:`, existingPeers);
+            console.log(`[Server] (1_to_n) Existing peers in room ${room}:`, existingPeers);
             socket.emit('existing-peers', existingPeers);
 
         }
@@ -91,7 +97,7 @@ io.on('connection', socket => {
             const existingPeers = [];
             if (to) existingPeers.push(to);
 
-            console.log(`[Server] Existing peers in room ${room}:`, existingPeers);
+            console.log(`[Server] (Redial) Existing peers in room ${room}:`, existingPeers);
             socket.emit('existing-peers', existingPeers);
         }
 
@@ -166,7 +172,7 @@ io.on('connection', socket => {
         if (room && rooms.has(room)) {
             const peer = rooms.get(room);
             peer.delete(id);
-            socket.to(room).emit('disconnected', id);
+            //socket.to(room).emit('disconnected', id);
             console.log(`[Server] Peer ${id} disconnected from room ${room}`);
         }
         peers.delete(id);                        // 핵심
