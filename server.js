@@ -38,7 +38,7 @@ io.on('connection', socket => {
     const id = Math.random().toString(36).substr(2, 9); // generate random ID
     peers.set(id, socket);
     console.log(`[Server] New connection: ${id}`);
-
+    let count = 0;
     socket.on('join', ({ room, type, to }) => {
         // =========================
         // 공통
@@ -51,8 +51,12 @@ io.on('connection', socket => {
 
         socket.join(room);
 
+        console.log(`[Server] Socket ${id} emitting joined room ${room}`);
         // 본인 id 전송 0906
-        socket.emit('my-id', id);
+        if(count === 0) {
+            console.log('count:', count);
+            count++;
+            socket.emit('my-id', id);}
 
         // =========================
         // type 분기

@@ -57,7 +57,7 @@ const constraints = { // <도근> 해상도 및 프레임레이트 제약 설정
 const MODE: string = '1_TO_N'; // '1_TO_N' or 'MESH'
 
 // 소켓 인스턴스를 컴포넌트 외부에서 한 번만 생성하여 재렌더링 시 재생성을 방지?
-export const SIGNALING_SERVER_URL = `https://192.168.0.37:8000`
+export const SIGNALING_SERVER_URL = `https://192.168.0.6:8000`
 
 // const socket = io(`https://192.168.0.8:8000`, { autoConnect: false });
 const pcConfig: RTCConfiguration = {
@@ -539,7 +539,7 @@ function App() {
                 const pcType = pcTypesRef.current[peerId];
                 // Offerer 인지 확인 후 renegotiate 
                 if (pcType === 'offerer') {
-                    renegotiateSamePc(peerId);
+                    // renegotiateSamePc(peerId);
                 }
             }
             else if (pc.connectionState === 'failed') {
@@ -753,7 +753,7 @@ function App() {
         // 사용자 목록 초기화
         setUsers([]);
         console.log(`[RESET] Successfully disconnected ${disconnectedCount} peers`);
-        // 3s 지연
+        // 방속 접속 재접속 전 3s 지연 ; 너무 빨리 접속 되기때문에 임의로 지연 추가
         await new Promise(resolve => setTimeout(resolve, 3000));
         socketRef.current?.connect(); // 스트림 획득 후 소켓 연결
         return disconnectedCount;
