@@ -38,7 +38,9 @@ io.on('connection', socket => {
     const id = Math.random().toString(36).substr(2, 9); // generate random ID
     peers.set(id, socket);
     console.log(`[Server] New connection: ${id}`);
+    let count = 0;
 
+    // room 참가
     socket.on('join', ({ room, type, to }) => {
         // =========================
         // 공통
@@ -53,7 +55,12 @@ io.on('connection', socket => {
 
         console.log(`[Server] Socket ${id} emitting joined room ${room}`);
         // 본인 id 전송 0906
-        socket.emit('my-id', id);
+        if (count === 0){
+            console.log('[Server] count:', count);
+            count ++;
+            socket.emit('my-id', id);
+        }
+        
 
         // =========================
         // type 분기
@@ -161,7 +168,7 @@ io.on('connection', socket => {
         targetSocket.emit('candidateArray', { from: id, data });
         console.log(`[Server] Candidate from ${id} to ${to}`);
     })
-
+    // (피어의)socket이 Signaling 서버와의 연결을 끊었을 때 처리
     socket.on('disconnect', () => {
         const room = socket.data.room;
         if (room && rooms.has(room)) {
@@ -172,7 +179,7 @@ io.on('connection', socket => {
         }
         peers.delete(id);                        // 핵심
     });
-
+    // reset 용도 disconnect 별도 구현
     socket.on('disconnect_reset', () => {
         const room = socket.data.room;
         if (room && rooms.has(room)) {

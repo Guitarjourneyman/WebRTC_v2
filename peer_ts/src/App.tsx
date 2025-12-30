@@ -1,11 +1,13 @@
 /*
     WebRTC Peer (React + TypeScript)
-    1. Candidate 개별 전송
-    2. Candidate 개별 수신 및 처리
-    ++ 연결 실패시 Candidate 배열로 송수신 받아 Loop문으로 addIceCandidate 처리
-    3. 화면 공유 스트림 교체 기능
-    4. 비트레이트 설정 기능
-    5. 1_TO_N / MESH 모드 선택 기능
+    1) 로컬 미디어 획득 → 시그널링 서버 연결
+    2) 방 참가(join) → 기존 피어 목록 수신(existing-peers)
+    3) Offer/Answer 교환 → RemoteDescription 설정
+    4) ICE Candidate 개별 전송/수신 + RemoteDescription 전 후보 버퍼링
+    5) RemoteDescription 설정 직후 후보 큐 flush 처리
+    6) 연결 상태 모니터링 및 실패 시 redial/정리 처리
+    7) 스트림 교체(화면공유) 시 replaceTrack 기반 트랙 교체
+    8) 비트레이트 제한(SDP b=AS 삽입 / sender.setParameters)
 
 */
 
@@ -87,30 +89,32 @@ function App() {
     // Record<<K,T> : TS utility type
 
     /* UseRef 사용하지 않으면 랜더링시 초기화 문제 발생 */
+    /* useRef 기반 상태 보존(명사형): 렌더링과 무관한 연결 객체/버퍼/스트림 보존 */
     const socketRef = useRef<SocketIOClient.Socket | null>(null);
+    /* 피어별 RTCPeerConnection 관리(명사형): peerId → RTCPeerConnection 매핑 */
     const pcsRef = useRef<Record<string, RTCPeerConnection>>({}); // peerId를 키(Key)로 하여 여러 명과의 연결 객체를 관리하고 있음
 
-    /* Others candidates against me */
+    /* 상대 ICE 후보 버퍼링(명사형): RemoteDescription 미설정 시 후보 임시 저장 */
     const pendingCandRef = useRef<Record<string, RTCIceCandidate[]>>({});
-
-    /* My candidates against others */
+    /* 로컬 ICE 후보 수집 배열(명사형): peerId별 ICE 후보 모아두기 */
     const iceCandidateGatheredArrayRef = useRef<Record<string, RTCIceCandidate[]>>({});
-
-    // const pcRef = useRef<RTCPeerConnection>(null);
+    
     const localStreamRef = useRef<MediaStream>(null);
     const localVideoRef = useRef<HTMLVideoElement>(null);
+    
     const myidRef = useRef<string>('');
     const localStreamSortRef = useRef<string>('userMedia');
+    /* Offerer/Answerer 구분 저장(명사형): 재연결/실패 처리 분기 기준 */
+    const pcTypesRef = useRef<Record<string, string>>({});
 
-    // user 상태 관리
+    // 사용자 상태(React state)
     const [users, setUsers] = useState<WebRTCUser[]>([]);
     const [myid, setMyid] = useState<string>('');
 
-    // Offerer / Answerer 구분 저장
-    const pcTypesRef = useRef<Record<string, string>>({});
+
     // pc Close Test 용 버튼 
     const forceDisconnectPeerRef = useRef<(peerId: string) => boolean>(() => false);
-
+    /* 송신 비트레이트 설정(명사형): RTCRtpSender.setParameters 기반 */
     const setVideoBitrate = useCallback(async (peerId: string, bitrate: number) => {
         const pc = pcsRef.current[peerId];
         if (!pc) {
@@ -208,7 +212,7 @@ function App() {
     console.log(newSdp);
     */
 
-    // useCallback을 사용하여 getLocalStream 함수를 메모이제이션
+    /* 로컬 미디어 획득 및 소켓 연결 시작: 스트림 준비 후 connect 수행 */
     const getLocalStream = useCallback(async () => {
         try {
             console.log('getLocalStream....');
@@ -265,6 +269,7 @@ function App() {
 
 
     // 비디오 컴포넌트 이외는 한 번만 렌더링
+     /* 초기 셋업(useEffect): 소켓 생성 → 로컬 스트림 획득 → 이벤트 핸들러 등록 */
     useEffect(() => {
         socketRef.current = io.connect(SIGNALING_SERVER_URL, { autoConnect: false });
         console.log('UserMode:', MODE);
@@ -276,14 +281,13 @@ function App() {
 
         socketRef.current.on('connect', () => { // connect 이벤트 수신 시 
             console.log('[Peer] Connected to signaling server');
+            // 모드별 join 요청
             if (MODE === '1_TO_N') {
                 console.log('[Peer] Joining room in 1_TO_N mode:', room);
-                //socketRef.current?.emit('join-1_to_n', room);
                 socketRef.current?.emit('join', { room, type: '1_to_n' });
             }
             else if (MODE === 'MESH') {
                 console.log('[Peer] Joining room in MESH mode:', room);
-                //socketRef.current?.emit('join-mesh', room);
                 socketRef.current?.emit('join', { room, type: 'mesh' });
             }
         });
@@ -438,13 +442,6 @@ function App() {
 
         socketRef.current.on('disconnected', (peerId: string) => {
             console.log(`[Peer] Peer ${peerId} disconnected.`);
-            /*
-            if (pcsRef.current[peerId]) {
-                pcsRef.current[peerId].close();
-                delete pcsRef.current[peerId];
-                setUsers(prev => prev.filter(u => u.id !== peerId));
-            }
-            */
         });
         // Cleanup 로직 수정
         return () => {
@@ -552,10 +549,12 @@ function App() {
             else if (pc.connectionState === 'failed') {
 
                 const pcType = pcTypesRef.current[peerId];
+                // offerer redial 처리(명사형): PC 정리 → join redial 요청 → 다시 pc 생성 (new-peer)
                 if (pcType === 'offerer') {
                     try {
                         const targetPc = pcsRef.current[peerId];
                         console.log(`[${peerId}] offerer connection lost. Attempting redial.`);
+                        // 중복 코드 제거 필요
                         if (targetPc) {
                             targetPc.close();
                             delete pcsRef.current[peerId];
@@ -636,7 +635,7 @@ function App() {
         return pc;
     }, [socketRef.current, myid]); // 의존성 배열이 비어있으므로 이 함수는 컴포넌트가 처음 렌더링될 때 한 번만 생성
 
-    // ICE send
+    // ICE 후보 배열 송신: 버튼 기반 candidateArray 전송 / 테스트용
     const sendIceCandidate = useCallback((peerId: string) => {
         const candArray = iceCandidateGatheredArrayRef.current[peerId] || [];
         const pc = pcsRef.current[peerId];
@@ -673,7 +672,7 @@ function App() {
             pendingCandRef.current[peerId] = [];
         }
     };
-
+    // 동일 PC 기반 renegotiation: iceRestart + offer 재생성 (pc 유지)
     const renegotiateSamePc = useCallback(async (peerId: string) => {
         const pc = pcsRef.current[peerId];
         const socket = socketRef.current;
@@ -732,7 +731,7 @@ function App() {
     };
     forceDisconnectPeerRef.current = forceDisconnectPeer;
 
-    // 모든 PeerConnection을 종료하는 함수
+    // 방 재접속: 전 피어 종료 + ref/state 초기화 + 소켓 재연결
     const reset = useCallback(async () => {
         console.log(`[RESET] Disconnecting all ${Object.keys(pcsRef.current).length} peers...`);
         // 시그널링 서버에 연결 종료 알림
