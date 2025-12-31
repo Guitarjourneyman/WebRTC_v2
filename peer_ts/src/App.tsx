@@ -30,7 +30,7 @@ const BitrateConfig: Record<BitrateLevel, number> = {
     max: 2000000,  // 2 Mbps
 };
 
-const BITRATE: number = 500; // <도근> 500 kbps. setMaxBandwidth를 이용하는 경우에만 이 값을 적용해야 함. (setVideoBitrate는 기본 단위가 kbps가 아니라 bps임.) 
+const BITRATE: number = 500; // <DG> 500 kbps. setMaxBandwidth를 이용하는 경우에만 이 값을 적용해야 함. (setVideoBitrate는 기본 단위가 kbps가 아니라 bps임.) 
 
 const displayMediaOptions = {
     video: {
@@ -46,11 +46,11 @@ const displayMediaOptions = {
     monitorTypeSurfaces: "include", // 모니터 유형 화면 포함
 };
 
-const constraints = { // <도근> 해상도 및 프레임레이트 제약 설정 프리셋
+const constraints = { // <DG> 해상도 및 프레임레이트 제약 설정 프리셋
     video: {
-        width: { ideal: 1920, max: 1920 },//{ ideal: 854, max: 1280 },
-        height: { ideal: 1080, max: 1080 },//{ ideal: 480, max: 720 },
-        frameRate: { ideal: 30, max: 30 },//{ ideal: 15, max: 30 },
+        width: { ideal: 1920, max: 1920 },
+        height: { ideal: 1080, max: 1080 },
+        frameRate: { ideal: 30, max: 30 },
     },
     audio: true
 };
@@ -58,7 +58,7 @@ const constraints = { // <도근> 해상도 및 프레임레이트 제약 설정
 // 운영 모드 설정
 const MODE: string = '1_TO_N'; // '1_TO_N' or 'MESH'
 
-// 소켓 인스턴스를 컴포넌트 외부에서 한 번만 생성하여 재렌더링 시 재생성을 방지?
+// 소켓 인스턴스를 컴포넌트 외부에서 한 번만 생성하여 재렌더링 시 재생성을 방지
 export const SIGNALING_SERVER_URL = `https://192.168.0.37:8000`
 
 // const socket = io(`https://192.168.0.8:8000`, { autoConnect: false });
@@ -98,10 +98,10 @@ function App() {
     const pendingCandRef = useRef<Record<string, RTCIceCandidate[]>>({});
     /* 로컬 ICE 후보 수집 배열(명사형): peerId별 ICE 후보 모아두기 */
     const iceCandidateGatheredArrayRef = useRef<Record<string, RTCIceCandidate[]>>({});
-    
+
     const localStreamRef = useRef<MediaStream>(null);
     const localVideoRef = useRef<HTMLVideoElement>(null);
-    
+
     const myidRef = useRef<string>('');
     const localStreamSortRef = useRef<string>('userMedia');
     /* Offerer/Answerer 구분 저장(명사형): 재연결/실패 처리 분기 기준 */
@@ -269,7 +269,7 @@ function App() {
 
 
     // 비디오 컴포넌트 이외는 한 번만 렌더링
-     /* 초기 셋업(useEffect): 소켓 생성 → 로컬 스트림 획득 → 이벤트 핸들러 등록 */
+    /* 초기 셋업(useEffect): 소켓 생성 → 로컬 스트림 획득 → 이벤트 핸들러 등록 */
     useEffect(() => {
         socketRef.current = io.connect(SIGNALING_SERVER_URL, { autoConnect: false });
         console.log('UserMode:', MODE);
@@ -308,13 +308,14 @@ function App() {
             for (const peerid of peers) {
                 console.log('[Peer] createPeerConnection:', peerid);
 
-                // <도근> Prevent duplicate connection creation if already exists
+                // <DG> 중복된 연결 생성 방지 로직 추가
                 if (pcsRef.current[peerid]) {
                     console.warn(`[Peer] Connection to ${peerid} already exists. Skipping duplicate existing-peers event.`);
-                    continue;
+                    continue; // for문 건너뛰어 다음 peerid로 이동하여 중복된 연결 생성 방지
                 }
 
                 const pc = createPeerConnection(peerid, 'both');
+
                 // Store the peer connection in the ref
                 pcsRef.current[peerid] = pc;
 
@@ -331,7 +332,7 @@ function App() {
 
                 console.log(`[Peer] Sent Offer to ${peerid}`, newSdp ? { type: offer.type, sdp: newSdp } : offer);
 
-                // <도근> 부하 분산을 위해 10ms 지연
+                // <DG> 부하 분산을 위해 10ms 지연
                 await new Promise(resolve => setTimeout(resolve, 10));
             }
         });
@@ -347,7 +348,7 @@ function App() {
 
             await pc.setRemoteDescription(new RTCSessionDescription(data));
 
-            // RemoteDescription 설정 직후 대기열 처리!! <도근>
+            // RemoteDescription 설정 직후 대기열 처리!! <DG>
             await flushPendingCandidates(from);
 
             const answer = await pc.createAnswer(); // answer 생성
@@ -373,7 +374,7 @@ function App() {
             console.log(`[Peer] Received answer.${from}`, data);
             await pc.setRemoteDescription(new RTCSessionDescription(data));
 
-            // RemoteDescription 설정 직후 대기열 처리!! <도근>
+            // RemoteDescription 설정 직후 대기열 처리!! <DG>
             await flushPendingCandidates(from);
         });
 
@@ -414,9 +415,7 @@ function App() {
             }
         });
 
-
-
-        // 수정된 candidate 개별 수신 이벤트
+        // <DG> 수정된 candidate 개별 수신 이벤트
         socketRef.current.on('candidate', async ({ from, data }: { from: string, data: any }) => {
             const pc = pcsRef.current[from];
             if (!pc || !data.candidate) return;
@@ -654,13 +653,18 @@ function App() {
 
     }, []);
 
-    // 대기 중인 Candidate들을 일괄 처리하는 함수 <도근>
+    // 대기 중인 ICE Candidate들을 일괄 처리하는 함수 <DG>
+    // RemoteDescription이 설정되기 전에 도착한 Candidate들은 버퍼(pendingCandRef)에 저장된다. RemoteDescription 설정이 완료된 직후 이 함수를 호출하여 버퍼에 쌓인 Candidate들을 PeerConnection에 등록한다.
     const flushPendingCandidates = async (peerId: string) => {
-        const pc = pcsRef.current[peerId];
-        const pendingCandidates = pendingCandRef.current[peerId];
 
+        const pc = pcsRef.current[peerId]; // 해당 peerId에 매핑된 RTCPeerConnection 객체 가져오기
+        const pendingCandidates = pendingCandRef.current[peerId]; // 해당 peerId에 대해 버퍼링된 ICE Candidate 목록 가져오기
+
+        // PeerConnection이 존재하고, 처리해야 할 대기열(pendingCandidates)이 있을 경우에만 실행
         if (pc && pendingCandidates && pendingCandidates.length > 0) {
             console.log(`[Peer] Flushing ${pendingCandidates.length} candidates for ${peerId}`);
+
+            // 대기 중인 모든 Candidate RTCPeerConnection에 추가
             for (const candidate of pendingCandidates) {
                 try {
                     await pc.addIceCandidate(new RTCIceCandidate(candidate));
@@ -668,10 +672,11 @@ function App() {
                     console.warn(`[Peer] Failed to add buffered candidate`, e);
                 }
             }
-            // 처리 후 배열 초기화
+            // 모든 처리가 완료되면 버퍼를 비워 중복 처리를 방지
             pendingCandRef.current[peerId] = [];
         }
     };
+
     // 동일 PC 기반 renegotiation: iceRestart + offer 재생성 (pc 유지)
     const renegotiateSamePc = useCallback(async (peerId: string) => {
         const pc = pcsRef.current[peerId];

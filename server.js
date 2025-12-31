@@ -55,12 +55,12 @@ io.on('connection', socket => {
 
         console.log(`[Server] Socket ${id} emitting joined room ${room}`);
         // 본인 id 전송 0906
-        if (count === 0){
+        if (count === 0) {
             console.log('[Server] count:', count);
-            count ++;
+            count++;
             socket.emit('my-id', id);
         }
-        
+
 
         // =========================
         // type 분기
