@@ -30,7 +30,7 @@ const BitrateConfig: Record<BitrateLevel, number> = {
     max: 2000000,  // 2 Mbps
 };
 
-const BITRATE: number = 500; // <도근> 500 kbps. setMaxBandwidth를 이용하는 경우에만 이 값을 적용해야 함. (setVideoBitrate는 기본 단위가 kbps가 아니라 bps임.) 
+const BITRATE: number = 500; // <DG> 500 kbps. setMaxBandwidth를 이용하는 경우에만 이 값을 적용해야 함. (setVideoBitrate는 기본 단위가 kbps가 아니라 bps임.) 
 
 const MAX_REDIAL_ATTEMPTS = 3; // 최대 재연결 시도 횟수
 
@@ -48,7 +48,7 @@ const displayMediaOptions = {
     monitorTypeSurfaces: "include", // 모니터 유형 화면 포함
 };
 
-const constraints = { // <도근> 해상도 및 프레임레이트 제약 설정 프리셋
+const constraints = { // <DG> 해상도 및 프레임레이트 제약 설정 프리셋
     video: {
         width: { ideal: 1920, max: 1920 },//{ ideal: 854, max: 1280 },
         height: { ideal: 1080, max: 1080 },//{ ideal: 480, max: 720 },
@@ -311,7 +311,7 @@ function App() {
             for (const peerid of peers) {
                 console.log('[Peer] createPeerConnection:', peerid);
 
-                // <도근> Prevent duplicate connection creation if already exists
+                // <DG> Prevent duplicate connection creation if already exists
                 if (pcsRef.current[peerid]) {
                     console.warn(`[Peer] Connection to ${peerid} already exists. Skipping duplicate existing-peers event.`);
                     continue;
@@ -334,7 +334,7 @@ function App() {
 
                 console.log(`[Peer] Sent Offer to ${peerid}`, newSdp ? { type: offer.type, sdp: newSdp } : offer);
 
-                // <도근> 부하 분산을 위해 10ms 지연
+                // <DG> 부하 분산을 위해 10ms 지연
                 await new Promise(resolve => setTimeout(resolve, 10));
             }
         });
@@ -350,7 +350,7 @@ function App() {
 
             await pc.setRemoteDescription(new RTCSessionDescription(data));
 
-            // RemoteDescription 설정 직후 대기열 처리!! <도근>
+            // RemoteDescription 설정 직후 대기열 처리!! <DG>
             await flushPendingCandidates(from);
 
             const answer = await pc.createAnswer(); // answer 생성
@@ -376,7 +376,7 @@ function App() {
             console.log(`[Peer] Received answer.${from}`, data);
             await pc.setRemoteDescription(new RTCSessionDescription(data));
 
-            // RemoteDescription 설정 직후 대기열 처리!! <도근>
+            // RemoteDescription 설정 직후 대기열 처리!! <DG>
             await flushPendingCandidates(from);
         });
 
@@ -649,7 +649,7 @@ function App() {
 
     }, []);
 
-    // 대기 중인 Candidate들을 일괄 처리하는 함수 <도근>
+    // 대기 중인 Candidate들을 일괄 처리하는 함수 <DG>
     const flushPendingCandidates = async (peerId: string) => {
         const pc = pcsRef.current[peerId];
         const pendingCandidates = pendingCandRef.current[peerId];
