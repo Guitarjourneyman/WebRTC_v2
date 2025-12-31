@@ -32,6 +32,8 @@ const BitrateConfig: Record<BitrateLevel, number> = {
 
 const BITRATE: number = 500; // <도근> 500 kbps. setMaxBandwidth를 이용하는 경우에만 이 값을 적용해야 함. (setVideoBitrate는 기본 단위가 kbps가 아니라 bps임.) 
 
+const MAX_REDIAL_ATTEMPTS = 3; // 최대 재연결 시도 횟수
+
 const displayMediaOptions = {
     video: {
         displaySurface: "monitor", // browser 브라우저 탭 우선적으로 선택
@@ -59,7 +61,7 @@ const constraints = { // <도근> 해상도 및 프레임레이트 제약 설정
 const MODE: string = '1_TO_N'; // '1_TO_N' or 'MESH'
 
 // 소켓 인스턴스를 컴포넌트 외부에서 한 번만 생성하여 재렌더링 시 재생성을 방지?
-export const SIGNALING_SERVER_URL = `https://192.168.0.37:8000`
+export const SIGNALING_SERVER_URL = `https://192.168.0.6:8000`
 
 // const socket = io(`https://192.168.0.8:8000`, { autoConnect: false });
 const pcConfig: RTCConfiguration = {
@@ -89,22 +91,23 @@ function App() {
     // Record<<K,T> : TS utility type
 
     /* UseRef 사용하지 않으면 랜더링시 초기화 문제 발생 */
-    /* useRef 기반 상태 보존(명사형): 렌더링과 무관한 연결 객체/버퍼/스트림 보존 */
+    /* useRef 기반 상태 보존: 렌더링과 무관한 연결 객체/버퍼/스트림 보존 */
     const socketRef = useRef<SocketIOClient.Socket | null>(null);
-    /* 피어별 RTCPeerConnection 관리(명사형): peerId → RTCPeerConnection 매핑 */
+    /* 피어별 RTCPeerConnection 관리: peerId → RTCPeerConnection 매핑 */
     const pcsRef = useRef<Record<string, RTCPeerConnection>>({}); // peerId를 키(Key)로 하여 여러 명과의 연결 객체를 관리하고 있음
-
-    /* 상대 ICE 후보 버퍼링(명사형): RemoteDescription 미설정 시 후보 임시 저장 */
+    /* 피어별 Redial 횟수관리: peerId → Redial 매핑 */
+    const redialCountsRef = useRef<Record<string, number>>({});
+    /* 상대 ICE 후보 버퍼링: RemoteDescription 미설정 시 후보 임시 저장 */
     const pendingCandRef = useRef<Record<string, RTCIceCandidate[]>>({});
-    /* 로컬 ICE 후보 수집 배열(명사형): peerId별 ICE 후보 모아두기 */
+    /* 로컬 ICE 후보 수집 배열: peerId별 ICE 후보 모아두기 */
     const iceCandidateGatheredArrayRef = useRef<Record<string, RTCIceCandidate[]>>({});
-    
+    /* 상대 ICE 후보 버퍼링: RemoteDescription 미설정 시 후보 임시 저장 */
     const localStreamRef = useRef<MediaStream>(null);
     const localVideoRef = useRef<HTMLVideoElement>(null);
-    
+
     const myidRef = useRef<string>('');
     const localStreamSortRef = useRef<string>('userMedia');
-    /* Offerer/Answerer 구분 저장(명사형): 재연결/실패 처리 분기 기준 */
+    /* Offerer/Answerer 구분 저장: 재연결/실패 처리 분기 기준 */
     const pcTypesRef = useRef<Record<string, string>>({});
 
     // 사용자 상태(React state)
@@ -114,7 +117,7 @@ function App() {
 
     // pc Close Test 용 버튼 
     const forceDisconnectPeerRef = useRef<(peerId: string) => boolean>(() => false);
-    /* 송신 비트레이트 설정(명사형): RTCRtpSender.setParameters 기반 */
+    /* 송신 비트레이트 설정: RTCRtpSender.setParameters 기반 */
     const setVideoBitrate = useCallback(async (peerId: string, bitrate: number) => {
         const pc = pcsRef.current[peerId];
         if (!pc) {
@@ -216,8 +219,8 @@ function App() {
     const getLocalStream = useCallback(async () => {
         try {
             console.log('getLocalStream....');
-            // localStreamRef.current = (await navigator.mediaDevices.getDisplayMedia(constraints));// 화면 공유
-            localStreamRef.current = (await navigator.mediaDevices.getUserMedia(constraints)); // 카메라
+            localStreamRef.current = (await navigator.mediaDevices.getDisplayMedia(constraints));// 화면 공유
+            // localStreamRef.current = (await navigator.mediaDevices.getUserMedia(constraints)); // 카메라
 
             if (localVideoRef.current) {
                 localVideoRef.current.srcObject = localStreamRef.current;
@@ -239,9 +242,9 @@ function App() {
 
         if (localStreamSortRef.current === 'userMedia') {
             console.log(`[Peer] Current stream is not a display source. Changing stream...`);
-            localStreamRef.current = await navigator.mediaDevices.getDisplayMedia(constraints);
+            // localStreamRef.current = await navigator.mediaDevices.getDisplayMedia(constraints);
 
-            // localStreamRef.current = (await navigator.mediaDevices.getUserMedia({ video: true, audio: true }));
+            localStreamRef.current = (await navigator.mediaDevices.getUserMedia({ video: true, audio: true }));
 
             if (localVideoRef.current) {
                 localVideoRef.current.srcObject = localStreamRef.current;
@@ -269,7 +272,7 @@ function App() {
 
 
     // 비디오 컴포넌트 이외는 한 번만 렌더링
-     /* 초기 셋업(useEffect): 소켓 생성 → 로컬 스트림 획득 → 이벤트 핸들러 등록 */
+    /* 초기 셋업(useEffect): 소켓 생성 → 로컬 스트림 획득 → 이벤트 핸들러 등록 */
     useEffect(() => {
         socketRef.current = io.connect(SIGNALING_SERVER_URL, { autoConnect: false });
         console.log('UserMode:', MODE);
@@ -549,7 +552,7 @@ function App() {
             else if (pc.connectionState === 'failed') {
                 const targetPc = pcsRef.current[peerId];
                 const pcType = pcTypesRef.current[peerId];
-                
+
                 // PC cleanup 공통 로직
                 if (targetPc) {
                     targetPc.close();
@@ -558,12 +561,19 @@ function App() {
                 delete pcTypesRef.current[peerId];
                 pendingCandRef.current[peerId] = [];
                 iceCandidateGatheredArrayRef.current[peerId] = [];
+                redialCountsRef.current[peerId] = (redialCountsRef.current[peerId] || 0) + 1;
                 setUsers(prev => prev.filter(u => u.id !== peerId));
 
                 // Offerer인 경우 redial 시도
                 if (pcType === 'offerer') {
-                    console.log(`[${peerId}] offerer connection lost. Attempting redial.`);
-                    socketRef.current?.emit('join', { room: room, type: 'redial', to: peerId });
+                    if (redialCountsRef.current[peerId] > MAX_REDIAL_ATTEMPTS) {
+                        console.log(`[${peerId}] Max redial attempts reached. Not attempting further redials.`);
+                        return;
+                    }
+                    else {
+                        console.log(`[${peerId}] offerer connection lost. Attempting redial.${redialCountsRef.current[peerId]}`);
+                        socketRef.current?.emit('join', { room: room, type: 'redial', to: peerId });
+                    }
                 } else {
                     console.log(`[${peerId}] Non-offerer connection failed. Closing peer connection.`);
                 }
@@ -571,8 +581,9 @@ function App() {
 
             else if (pc.connectionState === 'connected') {
                 console.log(`[${peerId}] Connection established successfully.changeCount:${changeCount}`);
+                redialCountsRef.current[peerId] = 0; // 재연결 성공 시 카운트 초기화
                 if (changeCount === 0) {
-                    changeStream(); /////////////////////
+                    // changeStream(); /////////////////////
                     changeCount++;
                 }
                 /*
@@ -739,7 +750,7 @@ function App() {
         pcTypesRef.current = {};
         pendingCandRef.current = {};
         iceCandidateGatheredArrayRef.current = {};
-
+        redialCountsRef.current = {};
         // 사용자 목록 초기화
         setUsers([]);
         console.log(`[RESET] Successfully disconnected ${disconnectedCount} peers`);
@@ -764,7 +775,7 @@ function App() {
             delete (window as any).pcsRef;
             delete (window as any).disconnectAllPeers;
         };
-    }, [reset]);
+    }, [forceDisconnectPeerRef, reset]);
 
     return (
         <div style={{ padding: 16, fontFamily: "system-ui, sans-serif" }}>
