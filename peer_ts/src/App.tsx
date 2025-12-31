@@ -543,7 +543,7 @@ function App() {
                 const pcType = pcTypesRef.current[peerId];
                 // Offerer 인지 확인 후 renegotiate 
                 if (pcType === 'offerer') {
-                    // renegotiateSamePc(peerId);
+                    renegotiateSamePc(peerId);
                 }
             }
             else if (pc.connectionState === 'failed') {
@@ -588,7 +588,7 @@ function App() {
             else if (pc.connectionState === 'connected') {
                 console.log(`[${peerId}] Connection established successfully.changeCount:${changeCount}`);
                 if (changeCount === 0) {
-                    // changeStream(); /////////////////////
+                    changeStream(); /////////////////////
                     changeCount++;
                 }
                 /*
@@ -691,8 +691,8 @@ function App() {
             // 핵심: 같은 pc에서 ICE restart + offer 재생성
             const offer = await pc.createOffer({ iceRestart: true });
 
-            // 너가 쓰던 SDP bandwidth 제한 로직 유지 가능
-            const newSdp = setMaxBandwidth(offer.sdp || '', 'video', 512000);
+            // SDP bandwidth 제한 로직 유지
+            const newSdp = setMaxBandwidth(offer.sdp || '', 'video', BITRATE);
             const localDesc = newSdp ? { type: offer.type, sdp: newSdp } : offer;
 
             await pc.setLocalDescription(localDesc);
