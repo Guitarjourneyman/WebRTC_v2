@@ -32,7 +32,7 @@ const BitrateConfig: Record<BitrateLevel, number> = {
 
 const BITRATE: number = 500; // <DG> 500 kbps. setMaxBandwidth를 이용하는 경우에만 이 값을 적용해야 함. (setVideoBitrate는 기본 단위가 kbps가 아니라 bps임.) 
 
-const MAX_REDIAL_ATTEMPTS = 3; // 최대 재연결 시도 횟수
+const MAX_REDIAL_ATTEMPTS = 2; // 최대 재연결 시도 횟수
 
 const displayMediaOptions = {
     video: {
