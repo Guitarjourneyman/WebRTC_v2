@@ -311,10 +311,10 @@ function App() {
             for (const peerid of peers) {
                 console.log('[Peer] createPeerConnection:', peerid);
 
-                // <DG> Prevent duplicate connection creation if already exists
+                // <DG> 중복된 연결 생성 방지 로직 추가
                 if (pcsRef.current[peerid]) {
                     console.warn(`[Peer] Connection to ${peerid} already exists. Skipping duplicate existing-peers event.`);
-                    continue;
+                    continue; // for문 건너뛰어 다음 peerid로 이동하여 중복된 연결 생성 방지
                 }
 
                 const pc = createPeerConnection(peerid, 'both');
@@ -649,13 +649,18 @@ function App() {
 
     }, []);
 
-    // 대기 중인 Candidate들을 일괄 처리하는 함수 <DG>
+    // 대기 중인 ICE Candidate들을 일괄 처리하는 함수 <DG>
+    // RemoteDescription이 설정되기 전에 도착한 Candidate들은 버퍼(pendingCandRef)에 저장된다. RemoteDescription 설정이 완료된 직후 이 함수를 호출하여 버퍼에 쌓인 Candidate들을 PeerConnection에 등록한다.
     const flushPendingCandidates = async (peerId: string) => {
-        const pc = pcsRef.current[peerId];
-        const pendingCandidates = pendingCandRef.current[peerId];
 
+        const pc = pcsRef.current[peerId]; // 해당 peerId에 매핑된 RTCPeerConnection 객체 가져오기
+        const pendingCandidates = pendingCandRef.current[peerId]; // 해당 peerId에 대해 버퍼링된 ICE Candidate 목록 가져오기
+
+        // PeerConnection이 존재하고, 처리해야 할 대기열(pendingCandidates)이 있을 경우에만 실행
         if (pc && pendingCandidates && pendingCandidates.length > 0) {
             console.log(`[Peer] Flushing ${pendingCandidates.length} candidates for ${peerId}`);
+
+            // 대기 중인 모든 Candidate RTCPeerConnection에 추가
             for (const candidate of pendingCandidates) {
                 try {
                     await pc.addIceCandidate(new RTCIceCandidate(candidate));
@@ -663,10 +668,11 @@ function App() {
                     console.warn(`[Peer] Failed to add buffered candidate`, e);
                 }
             }
-            // 처리 후 배열 초기화
+            // 모든 처리가 완료되면 버퍼를 비워 중복 처리를 방지
             pendingCandRef.current[peerId] = [];
         }
     };
+
     // 동일 PC 기반 renegotiation: iceRestart + offer 재생성 (pc 유지)
     const renegotiateSamePc = useCallback(async (peerId: string) => {
         const pc = pcsRef.current[peerId];
