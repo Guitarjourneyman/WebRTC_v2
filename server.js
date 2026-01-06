@@ -107,7 +107,9 @@ io.on('connection', socket => {
         if (!socket.data) socket.data = {};
         socket.data.room = room;
 
-
+        // 모든 피어 레벨 별 트리 구조 확인 ( peer.treeLevel 기준 )
+        
+        
 
         // --------------------------------------------
         // 2) type === 'broadcast' (기존 join-broadcast 로직)
@@ -206,6 +208,9 @@ io.on('connection', socket => {
             if (setid != peer.parentid) socket.emit('new-parent', peer.parentid);
             // 디버깅 로그
             console.log(`[room:${room}] Tree size by broadcast`, peers.size);
+            
+            // 트리 구조 출력
+            printTreeStructure(room);
 
             return; // broadcast 처리 끝
         }
@@ -261,7 +266,7 @@ io.on('connection', socket => {
             listOfBroadcasts[peer.roomid].broadcasters[peer.peerid] = peer;
             listOfBroadcasts[peer.roomid].allpeers[peer.peerid] = peer;
 
-            // peers 맵 업데이트
+            // setid에 대한 peer를 peers 맵 업데이트
             peers.set(setid, peer);
 
             // Subtree level 재설정
@@ -273,6 +278,9 @@ io.on('connection', socket => {
 
             // 디버깅 로그
             console.log(`[room:${room}] Tree size by redial`, peers.size);
+            
+            // 트리 구조 출력
+            printTreeStructure(room);
 
             return; // redial 처리 끝
         }
@@ -280,12 +288,51 @@ io.on('connection', socket => {
         // --------------------------------------------
         // 4) 예외: type 값이 이상한 경우
         // --------------------------------------------
-        console.log(`[Server] Unknown join type: ${type}`);
+        // console.log(`[Server] Unknown join type: ${type}`);
+        
     });
     /* 기존 join-redial, join-broadcast 주석 처리
         2025-12-24 통합버전으로 대체됨
     */
 
+    /* Tree 구조 디버깅용 */
+    function printTreeStructure(roomid) {
+        const broadcast = listOfBroadcasts[roomid];
+        if (!broadcast) return;
+        
+        const allpeers = broadcast.allpeers;
+        const levelMap = {};
+        
+        // 레벨별로 피어 분류
+        for (const peerid in allpeers) {
+            const peer = allpeers[peerid];
+            const level = peer.treeLevel;
+            if (!levelMap[level]) {
+                levelMap[level] = [];
+            }
+            levelMap[level].push(peer);
+        }
+        
+        // Key인 레벨 순서대로 출력
+        /* 오름차순 */
+        const sortedLevels = Object.keys(levelMap).sort((a, b) => a - b);
+        
+        let output = '';
+        for (const level of sortedLevels) {
+            output += `---LV${level}----\n`;
+            const peers = levelMap[level];
+            const peerStrings = peers.map(p => {
+                if (p.isRoot) {
+                    return p.peerid;
+                } else {
+                    return `${p.peerid}(${p.parentid})`;
+                }
+            });
+            output += peerStrings.join(' ') + '\n';
+        }
+        
+        console.log('\n========== TREE STRUCTURE [' + roomid + '] ==========\n' + output);
+    }
 
     function getFirstAvailableBroadcaster(peer) {
         var broadcasters = listOfBroadcasts[peer.roomid].broadcasters;
@@ -333,10 +380,10 @@ io.on('connection', socket => {
 
         const targetPeer = broadcast.allpeers[peerId];
         if (!targetPeer) return;
-
+        // q: BFS용 큐, visited: 방문 처리용 집합
         const q = [peerId];
         const visited = new Set([peerId]);
-
+        console.log(`[Server-Subtree] Updating subtree levels starting from peer ${peerId} the queue ${q} `);
         while (q.length) {
             const pid = q.shift(); // 현재 부모로 취급할 노드 peerid를 큐에서 꺼냄
             const parent = broadcast.allpeers[pid]; // pid에 해당하는 peer 객체(부모)를 가져온다.

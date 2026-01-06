@@ -507,7 +507,7 @@ function App() {
     }, []);
 
     // useCallback을 사용하여 createPeerConnection 함수를 메모이제이션
-    // peerId - parameter, RTCPeerConnection - return type
+    // peerId - parameter; 나와 연결될 피어, RTCPeerConnection - return type
     const createPeerConnection = useCallback((peerId: string, type: string): RTCPeerConnection => {
 
 
