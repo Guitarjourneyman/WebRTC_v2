@@ -36,11 +36,11 @@ const rooms = new Map();
 const peers = new Map();
 // broadcaster 관리용 객체(맵) (key: roomid, value: { broadcasters: {}, allpeers: {}} )
 var listOfBroadcasts = {};
-const AVAILABLE_BROADCASTING_NUMBER = 1; // 각 중계자가 감당할 수 있는 최대 시청자 수
-
+const AVAILABLE_BROADCASTING_NUMBER = 2; // 각 중계자가 감당할 수 있는 최대 시청자 수
+let seq = 0;
 
 io.on('connection', socket => {
-    let id = Math.random().toString(36).substr(2, 9); // generate random ID
+    let id = Math.random().toString(36).substr(2, 9)+'_'+seq++; // generate random ID
     // 기존의  id-socket 맵핑을 새로운 Peer 객체로 변경
     // peers.set(id, socket);
     console.log(`[Server] New connection: ${id}`);
@@ -88,7 +88,8 @@ io.on('connection', socket => {
         // --------------------------------------------
         const room = typeof payload === 'string' ? payload : payload.room;
         const type = typeof payload === 'string' ? 'broadcast' : payload.type; // 기본은 broadcast로 취급 가능
-        let setid = typeof payload === 'string' ? id : (payload.myid ?? id); // id가 payload에 있으면 사용, 없으면 새로 생성한 id 사용
+        // 삭제 예정 -> 수정 예정 ; id 내용
+        let setid = typeof payload === 'string' ? id : (payload.myid ?? id); // 0:1 d가 payload에 있으면 사용, 없으면 새로 생성한 id 사용
         console.log(`[Server] join event received. room: ${room}, type: ${type}, id: ${setid}`);
 
         // --------------------------------------------
@@ -105,18 +106,8 @@ io.on('connection', socket => {
         // room에 참가한 소켓에 room 정보 저장 (disconnect에서 사용)
         if (!socket.data) socket.data = {};
         socket.data.room = room;
-        // --------------------------------------------
-        // 1-1) listOfBroadcasts의 availableBroadcasters에 id가 존재한다면, 해당 피어에 대한 topology 정보 초기화
-        // Hardreset= redial 시 기존 id를 재사용하지 않고, 새로운 id를 발급하도록 처리
-        // --------------------------------------------
 
-        // if (listOfBroadcasts[room] && listOfBroadcasts[room].activeBroadcasters[setid]) {
-        //     console.log(`[Server] Re-initializing topology info for existing peer ${setid} in room ${room}`);
-        //     removePeer(room, setid);
-        //     setid = Math.random().toString(36).substr(2, 9); // 새로운 id 할당
-        //     id = setid; // 외부에서 참조하는 id도 갱신
-        //     console.log(`[Server] New setid & id assigned: ${setid}&&${id}`);
-        // }
+
 
         // --------------------------------------------
         // 2) type === 'broadcast' (기존 join-broadcast 로직)
@@ -125,7 +116,7 @@ io.on('connection', socket => {
             // Peer type 생성
             /**
              * @type {{peerid: string, socket: any, roomid: string, parentid: string | null, childrenids: string[],
-             * isBroadcaster: boolean, isFull: boolean, numberOfViewers: number, active: boolean, session: any}}
+             * isBroadcaster: boolean, isFull: boolean, numberOfViewers: number, isBroadcaster active: boolean, treeLevel: number, isRoot: boolean}}
              */
             const peer = {
                 peerid: setid,
@@ -138,7 +129,7 @@ io.on('connection', socket => {
                 numberOfViewers: 0,
                 treeLevel: -1,           // root=0, child=1, ...
                 active: true,
-                session: null
+                isRoot: false
             };
 
             // room 별 broadcast 구조 초기화
@@ -148,6 +139,19 @@ io.on('connection', socket => {
                     activeBroadcasters: {},   // isBroadcaster=true 활성 중계자들
                     allpeers: {}              // 방 내 전체 참가자(중계자 포함)
                 };
+            }
+
+            // 비활성화된 피어 정리 필요하다면 위치 변경
+            var tmp_peers = listOfBroadcasts[peer.roomid].allpeers;
+            // 비활성화된 피어 정리 필요하다면 위치 변경
+            for (var tmp_peer in tmp_peers) {
+                console.log(`[Server] Considering peer !: ${tmp_peer} for cleanup during broadcast of peer ${setid}`);
+                var targetpeer = tmp_peers[tmp_peer];
+                if (targetpeer.active === false) {
+                    console.log(`[Server] Removing inactive peer: ${targetpeer.peerid}`);
+                    removePeer(targetpeer.roomid, targetpeer.peerid);
+                    continue; // 비활성화된 피어는 건너뛰고,peers 목록에서 제거
+                }
             }
 
             // 본인 id 전송
@@ -176,7 +180,8 @@ io.on('connection', socket => {
                 if (listOfBroadcasts[peer.roomid].broadcasters[firstBroadcaster.peerid].numberOfViewers >= AVAILABLE_BROADCASTING_NUMBER) {
                     listOfBroadcasts[peer.roomid].broadcasters[firstBroadcaster.peerid].isFull = true;
                 }
-            } else {
+            }
+            else {
                 // Root broadcaster 설정
                 console.log('No available broadcaster found, setting as root broadcaster.');
                 peer.isBroadcaster = true;
@@ -185,6 +190,7 @@ io.on('connection', socket => {
 
                 // root는 자기 자신을 parent로 둠(기존 코드 유지)
                 peer.parentid = setid;
+                peer.isRoot = true;
                 socket.emit('root-broadcaster');
             }
 
@@ -199,13 +205,13 @@ io.on('connection', socket => {
             console.log('id: ', setid, 'Parent id:', peer.parentid);
             if (setid != peer.parentid) socket.emit('new-parent', peer.parentid);
             // 디버깅 로그
-            console.log(`[room:${room}] Tree size`, peers.size);
+            console.log(`[room:${room}] Tree size by broadcast`, peers.size);
 
             return; // broadcast 처리 끝
         }
 
         // --------------------------------------------
-        // 3) type === 'redial' (기존 join-redial 로직)
+        // 3) type === 'redial' 
         // --------------------------------------------
         if (type === 'redial') {
             // 기존 peer 가져오기 
@@ -214,16 +220,16 @@ io.on('connection', socket => {
                 console.log(`[Server] No existing peer found for redial with id: ${setid}`);
                 return;
             }
-            var activeBroadcasters = listOfBroadcasts[peer.roomid].activeBroadcasters;
             // 비활성화된 피어 정리 필요하다면 위치 변경
-            for (var activeBroadcaster in activeBroadcasters) {
-                console.log(`[Server] Considering peer !: ${activeBroadcaster} for cleanup during redial of peer ${setid}`);
-                var targetpeer = activeBroadcasters[activeBroadcaster];
+            var tmp_peers = listOfBroadcasts[peer.roomid].allpeers;
+            // 비활성화된 피어 정리 필요하다면 위치 변경
+            for (var tmp_peer in tmp_peers) {
+                console.log(`[Server] Considering peer !: ${tmp_peer} for cleanup during broadcast of peer ${setid}`);
+                var targetpeer = tmp_peers[tmp_peer];
                 if (targetpeer.active === false) {
                     console.log(`[Server] Removing inactive peer: ${targetpeer.peerid}`);
-                    delete allPeers[targetpeer.peerid];
                     removePeer(targetpeer.roomid, targetpeer.peerid);
-                    continue; // 비활성화된 피어는 건너뛰고, allpeers 목록에서 제거
+                    continue; // 비활성화된 피어는 건너뛰고,peers 목록에서 제거
                 }
             }
             var newBroadcaster = getFirstAvailableBroadcaster(peer);
@@ -266,7 +272,7 @@ io.on('connection', socket => {
             if (setid != peer.parentid) socket.emit('new-parent', peer.parentid);
 
             // 디버깅 로그
-            console.log(`[room:${room}] Tree size`, peers.size);
+            console.log(`[room:${room}] Tree size by redial`, peers.size);
 
             return; // redial 처리 끝
         }
@@ -284,23 +290,23 @@ io.on('connection', socket => {
     function getFirstAvailableBroadcaster(peer) {
         var broadcasters = listOfBroadcasts[peer.roomid].broadcasters;
         var firstResult;
-       
+
         for (var broadcasterId in broadcasters) {
             var broadcaster = broadcasters[broadcasterId];
             // console.log(`[Server] Considering broadcaster: ${broadcaster.peerid} for peer: ${peer.peerid}`);
-            if (broadcaster.peerid === peer.peerid) {
-                continue; // 자기 자신은 건너뜀
+            if (broadcaster.peerid === peer.peerid || !broadcaster.active) {
+                continue; // 자기 자신과 !active 건너뜀
             }
-            console.log(`[Server] Evaluating broadcaster: ${broadcaster.peerid} at level ${broadcaster.treeLevel}, isFull: ${broadcaster.isFull}`);
+            // console.log(`[Server] Evaluating broadcaster: ${broadcaster.peerid} at level ${broadcaster.treeLevel}, isFull: ${broadcaster.isFull}`);
             // 1. 후보군 조건 확인 (꽉 차지 않음 && peer보다 상위 레벨)
             if (!broadcaster.isFull) {
-                console.log(`[Server] Checking broadcaster: ${broadcaster.peerid} at level ${broadcaster.treeLevel}`);
+                // console.log(`[Server] Checking broadcaster: ${broadcaster.peerid} at level ${broadcaster.treeLevel}`);
                 if (broadcaster.treeLevel < peer.treeLevel || peer.treeLevel === -1) {
                     // 2. 가장 낮은 treeLevel 선택 로직
                     // 아직 선택된 게 없거나(null), 현재 broadcaster의 레벨이 기존 선택된 것보다 더 낮다면(더 상위라면) 교체
                     if (!firstResult || broadcaster.treeLevel < firstResult.treeLevel) {
                         firstResult = broadcaster;
-                        console.log(`[Server] Available broadcaster found: ${broadcaster.peerid} at level ${broadcaster.treeLevel}`);
+                        // console.log(`[Server] Available broadcaster found: ${broadcaster.peerid} at level ${broadcaster.treeLevel}`);
                     }
                 }
 
@@ -362,10 +368,12 @@ io.on('connection', socket => {
         if (!targetPeer || !targetPeer.socket || !targetPeer.active) {   // 없으면 여기서 drop
             const from = socket.data?.peerid ?? 'unknown';
             console.warn(`[Server] Drop offer: target missing. from=${from}, to=${to}`);
+            // 보낸 피어로 다시 알림 전송
+            socket.emit('drop-redial', { from: id, to });
             return;
         }
         targetPeer.socket.emit('offer', { from: id, data });
-        // console.log(`[Server] Offer from ${id} to ${to}`);
+        console.log(`[Server] Offer from ${id} to ${to}`);
     });
     //<kau> Send an answer to the peer sent an offer
     socket.on('answer', ({ to, data }) => {
@@ -394,7 +402,7 @@ io.on('connection', socket => {
     // 1029 새로 추가
     socket.on('candidateArray', ({ to, data }) => {
         const targetPeer = peers.get(to);
-        if (!targetPeer || !targetPeer.socket|| !targetPeer.active) {   // 없으면 여기서 drop
+        if (!targetPeer || !targetPeer.socket || !targetPeer.active) {   // 없으면 여기서 drop
             const from = socket.data?.peerid ?? 'unknown';
             console.warn(`[Server] Drop candidateArray: target missing. from=${from}, to=${to}`);
             return;
@@ -406,28 +414,100 @@ io.on('connection', socket => {
     socket.on('disconnect', () => {
         console.log(`[Server] Peer ${id} disconnected.`);
         const room = socket.data.room;
-        if (!room || !rooms.has(room)) return;
+        if (!room || !rooms.has(room)) {
+            console.log(`[Server] Invalid room on disconnect_reset: ${room}`);
+            return;
+        }
+
 
         const peer = peers.get(id);  // id -> peer 객체
-        if (!peer) return;
-
+        if (!peer) {
+            console.log(`[Server] No peer found with id ${id} on disconnect_reset`);
+            return;
+        }
+         // 끊긴 피어 비활성화 처리
         peer.active = false;
+        // delete broadcast.activeBroadcasters[peer.peerid];
+        if (peer.isRoot) {
+            console.log(`[Server] Root peer ${id} disconnected, marking all peers in room ${room} as inactive.`);
 
+            // Room 내 모든 피어 강퇴처리 socket emit('force-disconnect-room')
+            // io room socket을 통해 room에 있는 모든 소켓에 force-disconnect-room  이벤트 전송하도록 수정
+            io.to(room).emit('force-disconnect-room');
+
+            // listOfBroadcasts[peer.roomid]에 있는 모든 Peer inactive 처리
+            const broadcastOflist = listOfBroadcasts[peer.roomid];
+            for (const pId in broadcastOflist.allpeers) {
+                const p = broadcastOflist.allpeers[pId];
+                p.active = false;
+            }
+            // 260106 수정
+            // delete listOfBroadcasts[peer.roomid];
+        }
         console.log(`[Server] Marked peer ${id} as inactive peer`);
     });
+    // reset 용도 disconnect 별도 구현
+    socket.on('disconnect_reset', () => {
+        console.log(`[Server] Peer ${id} RESET.`);
+        const room = socket.data.room;
+        if (!room || !rooms.has(room)) {
+            console.log(`[Server] Invalid room on disconnect_reset: ${room}`);
+            return;
+        }
 
+
+        const peer = peers.get(id);  // id -> peer 객체
+        if (!peer) {
+            console.log(`[Server] No peer found with id ${id} on disconnect_reset`);
+            return;
+        }
+
+        // 끊긴 피어 비활성화 처리
+        peer.active = false;
+        // delete broadcast.activeBroadcasters[peer.peerid];
+        if (peer.isRoot) {
+            console.log(`[Server] Root peer ${id} disconnected, marking all peers in room ${room} as inactive.`);
+
+            // Room 내 모든 피어 강퇴처리 socket emit('force-disconnect-room')
+            // io room socket을 통해 room에 있는 모든 소켓에 force-disconnect-room  이벤트 전송하도록 수정
+            io.to(room).emit('force-disconnect-room');
+
+            // listOfBroadcasts[peer.roomid]에 있는 모든 Peer inactive 처리
+            const broadcastOflist = listOfBroadcasts[peer.roomid];
+            for (const pId in broadcastOflist.allpeers) {
+                const p = broadcastOflist.allpeers[pId];
+                p.active = false;
+            }
+            // 260106 수정
+            // delete listOfBroadcasts[peer.roomid];
+        }
+        console.log(`[Server] Marked peer ${id} as inactive peer`);
+    });
+    
+    /*
+    listOfBroadcasts 가 존재할 때, 부모를 받아오기 전 available하지 않은 peer 제거
+    */ 
     function removePeer(roomid, peerid) {
         // 0) room 유효성 검사
         const room = roomid;
-        if (!room || !rooms.has(room)) return;
+        if (!room || !rooms.has(room)) {
+            console.log('[Server] Invalid room on removePeer:', room);
+            return;
+        }
 
         // 1) peer 객체 찾기
         const peer = peers.get(peerid);
-        if (!peer) return;
+        if (!peer) {
+            console.log('[Server] No peer found with id ', peerid);
+            return;
+        }
 
         // 2) broadcast 구조 찾기 
         const broadcast = listOfBroadcasts[peer.roomid]; // peer.roomid는 room과 같다고 가정
-        if (!broadcast) return;
+        if (!broadcast) { 
+            console.log('[Server] No broadcast structure found for room ', peer.roomid);    
+            return;
+        }
 
         console.log('[Server] Handling disconnection of peer ', peer.peerid);
 
@@ -439,9 +519,9 @@ io.on('connection', socket => {
 
                 // 만약 꽉 차서 isFull 이었는데, 다시 자리가 생겼다면 풀어주기
                 if (parent.numberOfViewers < AVAILABLE_BROADCASTING_NUMBER) {
-                    console.log('[Sever] Setting parent ', parent.peerid, ' as not full');
+                    // console.log('[Sever] Setting parent ', parent.peerid, ' as not full');
                     parent.isFull = false;
-                    console.log('[Server] Previous broadcasters ', broadcast.broadcasters);
+                    // console.log('[Server] Previous broadcasters ', broadcast.broadcasters);
 
                     // parent를 다시 broadcasters 후보군에 넣어줌 
                     listOfBroadcasts[peer.roomid].broadcasters[parent.peerid] = parent;
@@ -465,7 +545,7 @@ io.on('connection', socket => {
         peers.delete(peerid);
 
         console.log(`[Server] Peer ${peerid} disconnected from room ${room} Peers size :`, peers.size);
-        console.log('[Server] Updated broadcasters ', broadcast.broadcasters);
+        // console.log('[Server] Updated broadcasters ', broadcast.broadcasters);
     }
 
 });
