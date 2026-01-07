@@ -37,6 +37,7 @@ const peers = new Map();
 // broadcaster 관리용 객체(맵) (key: roomid, value: { broadcasters: {}, allpeers: {}} )
 var listOfBroadcasts = {};
 const AVAILABLE_BROADCASTING_NUMBER = 4; // 각 중계자가 감당할 수 있는 최대 시청자 수
+// 디버깅용 시퀀스 넘버
 let seq = 0;
 
 io.on('connection', socket => {
@@ -137,15 +138,15 @@ io.on('connection', socket => {
             // room 별 broadcast 구조 초기화
             if (!listOfBroadcasts[peer.roomid]) {
                 listOfBroadcasts[peer.roomid] = {
-                    broadcasters: {},         // 자식 받을 수 있는 중계자들
+                    broadcasters: {},         // 자식 받을 수 있는 중계자들 , isFull=false인 것들
                     activeBroadcasters: {},   // isBroadcaster=true 활성 중계자들
                     allpeers: {}              // 방 내 전체 참가자(중계자 포함)
                 };
             }
 
-            // 비활성화된 피어 정리 필요하다면 위치 변경
+            // 비활성화된 피어 정리 active=false 피어 정리
             var tmp_peers = listOfBroadcasts[peer.roomid].allpeers;
-            // 비활성화된 피어 정리 필요하다면 위치 변경
+           
             for (var tmp_peer in tmp_peers) {
                 console.log(`[Server] Considering peer !: ${tmp_peer} for cleanup during broadcast of peer ${myid}`);
                 var targetpeer = tmp_peers[tmp_peer];
@@ -209,7 +210,7 @@ io.on('connection', socket => {
             // 디버깅 로그
             console.log(`[room:${room}] Tree size by broadcast`, peers.size);
             
-            // 트리 구조 출력
+            // 디버깅용 트리 구조 출력
             printTreeStructure(room);
 
             return; // broadcast 처리 끝
@@ -225,9 +226,9 @@ io.on('connection', socket => {
                 console.log(`[Server] No existing peer found for redial with id: ${myid}`);
                 return;
             }
-            // 비활성화된 피어 정리 필요하다면 위치 변경
+            // 비활성화된 피어 정리 active=false 피어 정리
             var tmp_peers = listOfBroadcasts[peer.roomid].allpeers;
-            // 비활성화된 피어 정리 필요하다면 위치 변경
+           
             for (var tmp_peer in tmp_peers) {
                 console.log(`[Server] Considering peer !: ${tmp_peer} for cleanup during broadcast of peer ${myid}`);
                 var targetpeer = tmp_peers[tmp_peer];
@@ -279,7 +280,7 @@ io.on('connection', socket => {
             // 디버깅 로그
             console.log(`[room:${room}] Tree size by redial`, peers.size);
             
-            // 트리 구조 출력
+            // 디버깅용 트리 구조 출력
             printTreeStructure(room);
 
             return; // redial 처리 끝
@@ -358,7 +359,7 @@ io.on('connection', socket => {
                 }
 
             }
-            // 3. 조건에 맞지 않는 Broadcaster(꽉 참 등)는 제외
+            // 3. 조건에 맞지 않는 Broadcaster(꽉 참 등)는 broadcasters에서 제거
             else {
                 delete listOfBroadcasts[peer.roomid].broadcasters[broadcasterId];
             }
@@ -535,8 +536,7 @@ io.on('connection', socket => {
                 const p = broadcastOflist.allpeers[pId];
                 p.active = false;
             }
-            // 260106 수정
-            // delete listOfBroadcasts[peer.roomid];
+
         }
         console.log(`[Server] Marked peer ${id} as inactive peer`);
     });

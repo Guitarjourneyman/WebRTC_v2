@@ -7,9 +7,7 @@
     4. 비트레이트 설정 기능
     5. Scalable K 트리 구조 구현 (서버 및 클라이언트)
     6. Subtree 재연결 구조 추가 중 2025-12-16
-/* 
 
-추가사항: Scalable Mode 추가 (서버에서 마지막 피어를 알려주는 로직, 첫번째 피어 알려주는 로직 필요)
 
 */
 
@@ -50,8 +48,6 @@ const displayMediaOptions = {
     monitorTypeSurfaces: "include", // 모니터 유형 화면 포함
 };
 
-// 운영 모드 설정
-const MODE: string = 'MESH'; // 'MESH' or 'SFU'
 
 // 소켓 인스턴스를 컴포넌트 외부에서 한 번만 생성하여 재렌더링 시 재생성을 방지합니다.
 //https://192.168.0.6:8000
@@ -276,8 +272,6 @@ function App() {
     // 비디오 컴포넌트 이외는 한 번만 렌더링
     useEffect(() => {
         socketRef.current = io.connect(SIGNALING_SERVER_URL, { autoConnect: false });
-        // console.log('UserMode:', MODE);
-        // getLocalStream();
         // 수동으로 연결 시작
         socketRef.current?.connect();
         console.log('Local stream obtained:', localStreamRef.current);
@@ -285,14 +279,6 @@ function App() {
 
         socketRef.current.on('connect', () => {
             console.log('[Peer] Connected to signaling server');
-            // if (MODE === 'SFU') {
-            //     console.log('[Peer] Joining room in SFU mode:', room);
-            //     socketRef.current?.emit('join-sfu', room);
-            // }
-            // else if (MODE === 'MESH') {
-            //     console.log('[Peer] Joining room in MESH mode:', room);
-            //     socketRef.current?.emit('join-mesh', room);
-            // }
             socketRef.current?.emit('join', { room: room, type: 'broadcast' });
         });
         socketRef.current.on('root-broadcaster', () => {
@@ -313,6 +299,8 @@ function App() {
                 console.warn(`[Peer] Connection to ${parentid} already exists. Skipping duplicate existing-peers event.`);
                 return; // for문 건너뛰어 다음 peerid로 이동하여 중복된 연결 생성 방지
             }
+
+            // 트리구조이기 때문에 recvonly 연결 생성
             const pc = createPeerConnection(parentid, 'recvonly');
             // Store the peer connection in the ref
             pcsRef.current[parentid] = pc;
@@ -321,7 +309,7 @@ function App() {
             // setVideoBitrate(peerid, BitrateConfig.min)
 
             const offer = await pc.createOffer();
-            const newSdp = setMaxBandwidth(offer.sdp || '', 'video', BITRATE); // 비디오 대역폭을 512bps로 설정
+            const newSdp = setMaxBandwidth(offer.sdp || '', 'video', BITRATE); 
             await pc.setLocalDescription(newSdp ? { type: offer.type, sdp: newSdp } : offer);
             socketRef.current?.emit('offer', { to: parentid, data: newSdp ? { type: offer.type, sdp: newSdp } : offer });
 
@@ -332,6 +320,7 @@ function App() {
         socketRef.current.on('offer', async ({ from, data }: { from: string, data: any }) => {
             console.log(`[Peer] Received offer from ${from}`, data);
 
+            // 트리구조이기 때문에 sendonly 연결 생성
             pcsRef.current[from] = createPeerConnection(from, 'sendonly');
             const pc = pcsRef.current[from];
             // 보내기 전 Bit rate 설정
@@ -343,8 +332,7 @@ function App() {
             const answer = await pc.createAnswer();
             const newSdp = setMaxBandwidth(answer.sdp || '', 'video', BITRATE); // 비디오 대역폭 설정
             await pc.setLocalDescription(newSdp ? { type: answer.type, sdp: newSdp } : answer);
-            // await pc.setLocalDescription(answer);
-            // socketRef.current?.emit('answer', { to: from, data: answer });
+            
             socketRef.current?.emit('answer', { to: from, data: newSdp ? { type: answer.type, sdp: newSdp } : answer });
             // console.log(`[Peer] Sent Answer to ${from}`,answer);
             console.log(`[Peer] Sent Answer to ${from}`, newSdp ? { type: answer.type, sdp: newSdp } : answer);
@@ -362,7 +350,7 @@ function App() {
             // RemoteDescription 설정 직후 대기열 처리!! <DG>
             await flushPendingCandidates(from);
         });
-        // 배열 수신
+        // 배열 수신 ; 현재 안씀
         socketRef.current.on('candidateArray', async ({ from, data }: { from: string, data: any }) => {
             const pc = pcsRef.current[from];
             if (pc) {
@@ -422,6 +410,7 @@ function App() {
             }
         });
 
+        /* 선생님이 퇴장했기때문에 서버로부터 강제 종료 메시지 수신*/
         socketRef.current.on('force-disconnect-room', () => {
             console.log(`[Peer] Force disconnect by server for all peers.`);
             // Show a brief notice to the user for 3 seconds
@@ -461,8 +450,9 @@ function App() {
 
         socketRef.current.on('dropOffer-redial', () => {
             console.log(`[Peer] Redial request dropped by server.`);
-            socketRef.current?.emit('join', { room: room, type: 'redial', to: myidRef.current });
+            socketRef.current?.emit('join', { room: room, type: 'redial'});
         });
+
         return () => {
             console.log('[App] Cleaning up resources...');
 
@@ -599,7 +589,7 @@ function App() {
                     else {
                         console.log(`[${peerId}] recvonly connection lost. Attempting redial.${redialCountsRef.current[peerId]}`);
                         // 1:N과 그대로지만, payload에 to가 없기 때문에 서버에서 myid로 처리됨 
-                        socketRef.current?.emit('join', { room: room, type: 'redial', to: peerId });
+                        socketRef.current?.emit('join', { room: room, type: 'redial'});
                     }
                 }
                 else {
@@ -754,7 +744,7 @@ function App() {
             // 핵심: 같은 pc에서 ICE restart + offer 재생성
             const offer = await pc.createOffer({ iceRestart: true });
 
-            // 너가 쓰던 SDP bandwidth 제한 로직 유지 가능
+            // 처음 설정한 SDP bandwidth 제한 로직 유지 가능
             const newSdp = setMaxBandwidth(offer.sdp || '', 'video', BITRATE);
             const localDesc = newSdp ? { type: offer.type, sdp: newSdp } : offer;
 
