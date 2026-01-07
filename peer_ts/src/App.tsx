@@ -448,7 +448,7 @@ function App() {
 
         });
 
-        socketRef.current.on('dropOffer-redial', () => {
+        socketRef.current.on('droppedOffer-redial', () => {
             console.log(`[Peer] Redial request dropped by server.`);
             socketRef.current?.emit('join', { room: room, type: 'redial'});
         });

@@ -417,7 +417,7 @@ io.on('connection', socket => {
             const from = socket.data?.peerid ?? 'unknown';
             console.warn(`[Server] Drop offer: target missing. from=${from}, to=${to}`);
             // 보낸 피어로 다시 알림 전송
-            socket.emit('dropOffer-redial', { from: id, to });
+            socket.emit('droppedOffer-redial', { from: id, to });
             return;
         }
         targetPeer.socket.emit('offer', { from: id, data });
