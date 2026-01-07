@@ -34,7 +34,7 @@ const BitrateConfig: Record<BitrateLevel, number> = {
     medium: 1000, // 1 Mbps
     max: 2000,  // 2 Mbps
 };
-const BITRATE: number = 500; // <DG> 500 kbps. setMaxBandwidth를 이용하는 경우에만 이 값을 적용해야 함. (setVideoBitrate는 기본 단위가 kbps가 아니라 bps임.) 
+const BITRATE: number = 10000; // <DG> 1000 kbps. setMaxBandwidth를 이용하는 경우에만 이 값을 적용해야 함. (setVideoBitrate는 기본 단위가 kbps가 아니라 bps임.) 
 const MAX_REDIAL_ATTEMPTS = 2; // 최대 재연결 시도 횟수
 const displayMediaOptions = {
     video: {
@@ -76,9 +76,9 @@ const pcConfig: RTCConfiguration = {
 const constraints = {
     video: {
 
-        width: { ideal: 2880, max: 2880 },
-        height: { ideal: 1800, max: 1800 },
-        frameRate: { ideal: 30, max: 30 },
+        width: { ideal: 1920, max: 1920 },
+        height: { ideal: 1080, max: 1080 },
+        frameRate: { ideal: 60, max: 60 },
     },
     audio: true
 };
@@ -459,7 +459,7 @@ function App() {
 
         });
 
-        socketRef.current.on('drop-redial', () => {
+        socketRef.current.on('dropOffer-redial', () => {
             console.log(`[Peer] Redial request dropped by server.`);
             socketRef.current?.emit('join', { room: room, type: 'redial', to: myidRef.current });
         });
@@ -598,6 +598,7 @@ function App() {
                     }
                     else {
                         console.log(`[${peerId}] recvonly connection lost. Attempting redial.${redialCountsRef.current[peerId]}`);
+                        // 1:N과 그대로지만, payload에 to가 없기 때문에 서버에서 myid로 처리됨 
                         socketRef.current?.emit('join', { room: room, type: 'redial', to: peerId });
                     }
                 }
@@ -760,7 +761,7 @@ function App() {
             await pc.setLocalDescription(localDesc);
 
             // 서버로 offer 전송 (기존 이벤트명 유지)
-            socket.emit('offer', { to: peerId, data: localDesc });
+            socket.emit('offer-renegotiate', { to: peerId, data: localDesc });
             console.log(`[${peerId}] Renegotiation offer sent.`);
         } catch (e) {
             console.error(`[${peerId}] renegotiation failed`, e);
