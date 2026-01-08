@@ -6,9 +6,8 @@
     3. 화면 공유 스트림 교체 기능
     4. 비트레이트 설정 기능
     5. Scalable K 트리 구조 구현 (서버 및 클라이언트)
-    6. Subtree 재연결 구조 추가 중 2025-12-16
-
-
+    6. Subtree 재연결 구조 추가 (시그널링 서버)
+    7. 선생님 퇴장시 강제 종료 기능 추가
 */
 
 import React, { use, useCallback, useEffect, useRef, useState } from 'react';
