@@ -34,7 +34,7 @@ let io = socketio.listen(httpsServer)
 const rooms = new Map();
 // 각 방의 lisOfBroadcasts 의 allpeers의 합
 const peers = new Map();
-// broadcaster 관리용 객체(맵) (key: roomid, value: { broadcasters: {}, allpeers: {}} )
+// broadcaster 관리용 객체(맵) (key: roomid, value: { broadcasters: {}, activeBroadcasters: {} ,allpeers: {}} )
 var listOfBroadcasts = {};
 const AVAILABLE_BROADCASTING_NUMBER = 4; // 각 중계자가 감당할 수 있는 최대 시청자 수
 // 디버깅용 시퀀스 넘버

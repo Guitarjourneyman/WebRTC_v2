@@ -51,7 +51,7 @@ const displayMediaOptions = {
 
 // 소켓 인스턴스를 컴포넌트 외부에서 한 번만 생성하여 재렌더링 시 재생성을 방지합니다.
 //https://192.168.0.6:8000
-export const SIGNALING_SERVER_URL = `https://192.168.0.6:8000`
+export const SIGNALING_SERVER_URL = `https://172.30.1.70:8000`
 
 // const socket = io(`https://192.168.0.8:8000`, { autoConnect: false });
 const pcConfig: RTCConfiguration = {
@@ -789,6 +789,10 @@ function App() {
     const reset = useCallback(async () => {
         console.log(`[RESET] Disconnecting all ${Object.keys(pcsRef.current).length} peers...`);
         // 시그널링 서버에 연결 종료 알림
+        /* 'disconnect' 메시지를 사용하여 시그널링과 끊기는 부분을 중복을 없앨 수 있으나
+            디버깅을 용이하기 위해서 'disconnect_reset' 으로 구분함
+        */
+        // socketRef.current?.emit('disconnect');
         socketRef.current?.emit('disconnect_reset');
         // 소켓 연결 종료
         if (socketRef.current) {
