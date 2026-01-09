@@ -116,7 +116,7 @@ function App() {
     // pc Close Test 용 버튼 
     const forceDisconnectPeerRef = useRef<(peerId: string) => boolean>(() => false);
     /* 송신 비트레이트 설정: RTCRtpSender.setParameters 기반 */
-    const TIMEOUT_DURATION = 0; //0초
+    
 
     const setVideoBitrate = useCallback(async (peerId: string, bitrate: number) => {
         const pc = pcsRef.current[peerId];
@@ -349,7 +349,7 @@ function App() {
             // RemoteDescription 설정 직후 대기열 처리!! <DG>
             await flushPendingCandidates(from);
         });
-        // 배열 수신 ; 현재 안씀
+        // 배열 수신 ; 버튼처리되어있음
         socketRef.current.on('candidateArray', async ({ from, data }: { from: string, data: any }) => {
             const pc = pcsRef.current[from];
             if (pc) {
@@ -385,7 +385,7 @@ function App() {
 
             }
         });
-        // 개별 수신
+        // 개별 수신 ; 기본적으로 사용
         socketRef.current.on('candidate', async ({ from, data }: { from: string, data: any }) => {
             const pc = pcsRef.current[from];
             if (!pc || !data.candidate) return;
