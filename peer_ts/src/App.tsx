@@ -61,7 +61,7 @@ const constraints = { // <DG> 해상도 및 프레임레이트 제약 설정 프
 const MODE: string = '1_TO_N'; // '1_TO_N' or 'MESH'
 
 // 소켓 인스턴스를 컴포넌트 외부에서 한 번만 생성하여 재렌더링 시 재생성을 방지?
-export const SIGNALING_SERVER_URL = `https://192.168.0.6:8000`
+export const SIGNALING_SERVER_URL = `https://192.168.0.37:8000`
 
 // const socket = io(`https://192.168.0.8:8000`, { autoConnect: false });
 const pcConfig: RTCConfiguration = {
@@ -83,6 +83,7 @@ const pcConfig: RTCConfiguration = {
 const config = {};
 // const pcConfig : RTCConfiguration = {"iceServers":[]};
 
+// const pcConfig : RTCConfiguration = {"iceServers":[]};
 function App() {
     console.log('Rendering... ');
     let changeCount = 0;
@@ -107,17 +108,22 @@ function App() {
 
     const myidRef = useRef<string>('');
     const localStreamSortRef = useRef<string>('userMedia');
-    /* Offerer/Answerer 구분 저장: 재연결/실패 처리 분기 기준 */
+
+    const hasStreamChangedRef = useRef<boolean>(false);
     const pcTypesRef = useRef<Record<string, string>>({});
 
     // 사용자 상태(React state)
     const [users, setUsers] = useState<WebRTCUser[]>([]);
     const [myid, setMyid] = useState<string>('');
+    const [notice, setNotice] = useState<string>('');
+    const noticeTimerRef = useRef<number | null>(null);
 
 
     // pc Close Test 용 버튼 
     const forceDisconnectPeerRef = useRef<(peerId: string) => boolean>(() => false);
     /* 송신 비트레이트 설정: RTCRtpSender.setParameters 기반 */
+    const TIMEOUT_DURATION = 0; //0초
+
     const setVideoBitrate = useCallback(async (peerId: string, bitrate: number) => {
         const pc = pcsRef.current[peerId];
         if (!pc) {
@@ -136,12 +142,11 @@ function App() {
                     parameters.encodings = [{}];
                     console.log('[Peer] ${peerId} senderParameters2 : ', parameters);
                 }
-
                 // 비트레이트 설정
                 parameters.encodings[0].maxBitrate = bitrate;
 
                 await videoSender.setParameters(parameters);
-                console.log(`[Peer] Video bitrate for ${peerId} set to ${bitrate / 1000}kbps.`);
+                console.log(`[Peer] Video bitrate for ${peerId} set to ${bitrate / 1000}bps.`);
             } catch (e) {
                 console.error(`[Peer] Failed to set video bitrate for ${peerId}:`, e);
             }
@@ -151,19 +156,18 @@ function App() {
     }, []);
 
     /**
-     * SDP에서 특정 미디어 타입(예: 'audio', 'video')의 최대 대역폭을 설정
-     * SDP를 받은 Peer는 이 값을 참고하여 해당 미디어 스트림의 대역폭을 제한하여 송신
-     * Bandwidth Attribute (b=)는 RFC 4566에 따라 설정
-     * 'AS' (Application Specific) 타입은 RTP 세션 대역폭
-     *
-     * @param sdp 원본 Session Description Protocol 문자열.
-     * @param mediaType 대역폭을 설정할 미디어 타입 ('audio', 'video' 등).
-     * @param maxKbps 설정할 최대 대역폭 값 (Kilobits per second).
-     * @returns 수정된 SDP 문자열.
-     */
-
-    function setMaxBandwidth(sdp: string, mediaType: string, maxKbps: number): string {
-        console.log(`[SDP] Setting max bandwidth for ${mediaType} to ${maxKbps} kbps`);
+ * SDP에서 특정 미디어 타입(예: 'audio', 'video')의 최대 대역폭을 설정
+ * SDP를 받은 Peer는 이 값을 참고하여 해당 미디어 스트림의 대역폭을 제한하여 송신
+ * Bandwidth Attribute (b=)는 RFC 4566에 따라 설정
+ * 'AS' (Application Specific) 타입은 RTP 세션 대역폭
+ *
+ * @param sdp 원본 Session Description Protocol 문자열.
+ * @param mediaType 대역폭을 설정할 미디어 타입 ('audio', 'video' 등).
+ * @param maxbps 설정할 최대 대역폭 값 (Kilobits per second).
+ * @returns 수정된 SDP 문자열.
+ */
+    function setMaxBandwidth(sdp: string, mediaType: string, maxbps: number): string {
+        console.log(`[SDP] Setting max bandwidth for ${mediaType} to ${maxbps} bps`);
         if (!sdp) {
             console.warn('[SDP] No SDP provided');
             return sdp;
@@ -184,10 +188,10 @@ function App() {
                 insideTargetMediaSection = line.startsWith(mediaPattern);
 
                 // 타겟 미디어 섹션을 찾았고, 이전에 b= 라인을 추가하지 않았다면 삽입
-                // b=AS:{maxKbps} 라인을 m= 바로 뒤에 추가
+                // b=AS:{maxbps} 라인을 m= 바로 뒤에 추가
                 if (insideTargetMediaSection) {
                     // RFC 4566에서 'AS' 타입은 애플리케이션 특정 최대 대역폭을 의미
-                    newSdp.push(`b=AS:${maxKbps}`);
+                    newSdp.push(`b=AS:${maxbps}`);
 
                     // 삽입 후 플래그를 다시 false로 설정하여 현재 섹션에 b= 라인이 더 이상 추가되지 않도록 함
                     // 다음 m= 라인이 나올 때까지는 새로운 b= 라인을 삽입할 필요가 없음
@@ -215,22 +219,19 @@ function App() {
     console.log(newSdp);
     */
 
-    /* 로컬 미디어 획득 및 소켓 연결 시작: 스트림 준비 후 connect 수행 */
+    // useCallback을 사용하여 getLocalStream 함수를 메모이제이션
     const getLocalStream = useCallback(async () => {
         try {
             console.log('getLocalStream....');
-            localStreamRef.current = (await navigator.mediaDevices.getDisplayMedia(constraints));// 화면 공유
-            // localStreamRef.current = (await navigator.mediaDevices.getUserMedia(constraints)); // 카메라
+            // 추후 localStreamRef로 로컬 비디오 컴포넌트에서 사용
+
+            localStreamRef.current = await navigator.mediaDevices.getDisplayMedia(constraints);
+
+            // localStreamRef.current = await navigator.mediaDevices.getUserMedia(constraints);
 
             if (localVideoRef.current) {
                 localVideoRef.current.srcObject = localStreamRef.current;
             }
-
-
-            console.log('[Peer] Connecting to signaling server...  ');
-            // useEffect로 이동하면, localStream과 Sync 문제 발생
-            // 수동으로 연결 시작
-            socketRef.current?.connect(); // 스트림 획득 후 소켓 연결
         }
         catch (error) {
             console.error('Error accessing media devices.', error);
@@ -240,11 +241,13 @@ function App() {
     /* 스트림 교체 함수 */
     const changeStream = useCallback(async () => {
 
+
+
         if (localStreamSortRef.current === 'userMedia') {
             console.log(`[Peer] Current stream is not a display source. Changing stream...`);
-            // localStreamRef.current = await navigator.mediaDevices.getDisplayMedia(constraints);
+            localStreamRef.current = await navigator.mediaDevices.getDisplayMedia(constraints);
 
-            localStreamRef.current = (await navigator.mediaDevices.getUserMedia({ video: true, audio: true }));
+            // localStreamRef.current = (await navigator.mediaDevices.getUserMedia({ video: true, audio: true }));
 
             if (localVideoRef.current) {
                 localVideoRef.current.srcObject = localStreamRef.current;
@@ -258,7 +261,7 @@ function App() {
                     // localStreamRef의 각 트랙에 대해, 동일한 종류(kind)의 트랙을 보내는 송신자(sender)를 찾음
                     const sender = senders.find(s => s.track?.kind === track.kind);
                     if (sender) {
-                        sender.replaceTrack(track); // 세션을 유지하면서 트랙을 교체
+                        sender.replaceTrack(track);
                     }
                 });
             });
@@ -272,102 +275,75 @@ function App() {
 
 
     // 비디오 컴포넌트 이외는 한 번만 렌더링
-    /* 초기 셋업(useEffect): 소켓 생성 → 로컬 스트림 획득 → 이벤트 핸들러 등록 */
     useEffect(() => {
         socketRef.current = io.connect(SIGNALING_SERVER_URL, { autoConnect: false });
-        console.log('UserMode:', MODE);
-
-        getLocalStream(); // 미디어 획득하고 시그널링과 연결 시도
+        // 수동으로 연결 시작
+        socketRef.current?.connect();
         console.log('Local stream obtained:', localStreamRef.current);
 
-        const room = 'testRoom'; // Example room name    
 
-        socketRef.current.on('connect', () => { // connect 이벤트 수신 시 
+        socketRef.current.on('connect', () => {
             console.log('[Peer] Connected to signaling server');
-            // 모드별 join 요청
-            if (MODE === '1_TO_N') {
-                console.log('[Peer] Joining room in 1_TO_N mode:', room);
-                socketRef.current?.emit('join', { room, type: '1_to_n' });
-            }
-            else if (MODE === 'MESH') {
-                console.log('[Peer] Joining room in MESH mode:', room);
-                socketRef.current?.emit('join', { room, type: 'mesh' });
-            }
+            socketRef.current?.emit('join', { room: room, type: 'broadcast' });
         });
-
-
-        socketRef.current.on('my-id', (id: string) => { // 아이디 수신하고 세팅
+        socketRef.current.on('root-broadcaster', () => {
+            console.log('[Peer] I am the root broadcaster in the room.');
+            getLocalStream();
+            // 나머지 피어들은 remoteSteram을 받아 localStreamRef.current에 집어넣음
+        });
+        socketRef.current.on('my-id', (id: string) => {
             console.log('[Peer] My ID:', id);
             myidRef.current = id;
             setMyid(id);
             console.log('My ID set to state:', myidRef.current);
         });
-
-
-        socketRef.current.on('existing-peers', async (peers: string[]) => { // 이미 방에 있던 사용자들의 목록(existing-peers) 수신 (새로 참여 시)
-            console.log('[Peer] Existing peers in room:', peers);
-
-            // 순차적으로 연결하여 Signaling Storm 방지
-            for (const peerid of peers) {
-                console.log('[Peer] createPeerConnection:', peerid);
-
-                // <DG> 중복된 연결 생성 방지 로직 추가
-                if (pcsRef.current[peerid]) {
-                    console.warn(`[Peer] Connection to ${peerid} already exists. Skipping duplicate existing-peers event.`);
-                    continue; // for문 건너뛰어 다음 peerid로 이동하여 중복된 연결 생성 방지
-                }
-
-                const pc = createPeerConnection(peerid, 'both');
-                // Store the peer connection in the ref
-                pcsRef.current[peerid] = pc;
-
-                // 보내기 전 Bit rate 설정
-                // setVideoBitrate(peerid, BitrateConfig.min)
-
-                const offer = await pc.createOffer();
-                const newSdp = setMaxBandwidth(offer.sdp || '', 'video', BITRATE); // if BITRATE = 51200 = 비디오 대역폭을 51.2Mbps로 설정
-                await pc.setLocalDescription(newSdp ? { type: offer.type, sdp: newSdp } : offer);
-                socketRef.current?.emit('offer', { to: peerid, data: newSdp ? { type: offer.type, sdp: newSdp } : offer });
-
-                // peerid에 대해서 내가 offer 보냄 -> Offerer 기록
-                pcTypesRef.current[peerid] = 'offerer';
-
-                console.log(`[Peer] Sent Offer to ${peerid}`, newSdp ? { type: offer.type, sdp: newSdp } : offer);
-
-                // <DG> 부하 분산을 위해 10ms 지연
-                await new Promise(resolve => setTimeout(resolve, 10));
+        socketRef.current.on('new-parent', async (parentid: string) => {
+            console.log('[Peer] my Parent in room:', parentid);
+            // <DG> 중복된 연결 생성 방지 로직 추가
+            if (pcsRef.current[parentid]) {
+                console.warn(`[Peer] Connection to ${parentid} already exists. Skipping duplicate existing-peers event.`);
+                return; // for문 건너뛰어 다음 peerid로 이동하여 중복된 연결 생성 방지
             }
+
+            // 트리구조이기 때문에 recvonly 연결 생성
+            const pc = createPeerConnection(parentid, 'recvonly');
+            // Store the peer connection in the ref
+            pcsRef.current[parentid] = pc;
+
+            // 보내기 전 Bit rate 설정
+            // setVideoBitrate(peerid, BitrateConfig.min)
+
+            const offer = await pc.createOffer();
+            const newSdp = setMaxBandwidth(offer.sdp || '', 'video', BITRATE);
+            await pc.setLocalDescription(newSdp ? { type: offer.type, sdp: newSdp } : offer);
+            socketRef.current?.emit('offer', { to: parentid, data: newSdp ? { type: offer.type, sdp: newSdp } : offer });
+
+            console.log(`[Peer] Sent Offer to ${parentid}`, newSdp ? { type: offer.type, sdp: newSdp } : offer);
         });
 
 
-        socketRef.current.on('offer', async ({ from, data }: { from: string, data: any }) => { // Offer 수신 및 Answer 전송 (기존 참여자)
+        socketRef.current.on('offer', async ({ from, data }: { from: string, data: any }) => {
             console.log(`[Peer] Received offer from ${from}`, data);
 
-            pcsRef.current[from] = createPeerConnection(from, 'both'); // RTCPeerConnection 생성
+            // 트리구조이기 때문에 sendonly 연결 생성
+            pcsRef.current[from] = createPeerConnection(from, 'sendonly');
             const pc = pcsRef.current[from];
             // 보내기 전 Bit rate 설정
             // setVideoBitrate(from, BitrateConfig.min)
 
             await pc.setRemoteDescription(new RTCSessionDescription(data));
-
             // RemoteDescription 설정 직후 대기열 처리!! <DG>
             await flushPendingCandidates(from);
-
-            const answer = await pc.createAnswer(); // answer 생성
-
-            const newSdp = setMaxBandwidth(answer.sdp || '', 'video', BITRATE); // 비디오 대역폭 설정. if BITRATE = 10000 = 10Mbps
+            const answer = await pc.createAnswer();
+            const newSdp = setMaxBandwidth(answer.sdp || '', 'video', BITRATE); // 비디오 대역폭 설정
             await pc.setLocalDescription(newSdp ? { type: answer.type, sdp: newSdp } : answer);
 
             socketRef.current?.emit('answer', { to: from, data: newSdp ? { type: answer.type, sdp: newSdp } : answer });
-
-            // peerid에 대해서 내가 answer 보냄 -> Answerer 기록
-            pcTypesRef.current[from] = 'answerer';
-
             // console.log(`[Peer] Sent Answer to ${from}`,answer);
             console.log(`[Peer] Sent Answer to ${from}`, newSdp ? { type: answer.type, sdp: newSdp } : answer);
         });
 
-        socketRef.current.on('answer', async ({ from, data }: { from: string, data: any }) => { // Answer 수신 및 ICE 후보 전송 (새로운 참여자)
+        socketRef.current.on('answer', async ({ from, data }: { from: string, data: any }) => {
             const pc = pcsRef.current[from];
             if (!pc) {
                 console.error('RTCPeerConnection is not initialized.');
@@ -379,8 +355,7 @@ function App() {
             // RemoteDescription 설정 직후 대기열 처리!! <DG>
             await flushPendingCandidates(from);
         });
-
-        // 배열 수신 이벤트
+        // 배열 수신 ; 현재 안씀
         socketRef.current.on('candidateArray', async ({ from, data }: { from: string, data: any }) => {
             const pc = pcsRef.current[from];
             if (pc) {
@@ -416,10 +391,7 @@ function App() {
 
             }
         });
-
-
-
-        // 수정된 candidate 개별 수신 이벤트
+        // 개별 수신
         socketRef.current.on('candidate', async ({ from, data }: { from: string, data: any }) => {
             const pc = pcsRef.current[from];
             if (!pc || !data.candidate) return;
@@ -443,10 +415,49 @@ function App() {
             }
         });
 
-        socketRef.current.on('disconnected', (peerId: string) => {
-            console.log(`[Peer] Peer ${peerId} disconnected.`);
+        /* 선생님이 퇴장했기때문에 서버로부터 강제 종료 메시지 수신*/
+        socketRef.current.on('force-disconnect-room', () => {
+            console.log(`[Peer] Force disconnect by server for all peers.`);
+            // Show a brief notice to the user for 3 seconds
+            if (noticeTimerRef.current) {
+                // 이전에 설정된 타이머를 취소 -> 에러 방지
+                clearTimeout(noticeTimerRef.current);
+                noticeTimerRef.current = null;
+            }
+            setNotice('선생님이 퇴장하였습니다 !');
+            // setTimeout 구문 안의 동작이 설정된 시간(3초) 후에 실행되도록 타이머 설정
+            noticeTimerRef.current = window.setTimeout(() => {
+                setNotice('');
+                noticeTimerRef.current = null;
+            }, 3000);
+            // 서버와 연결된 socket은 그대로 모든 피어 연결(PC) 종료
+            Object.keys(pcsRef.current).forEach((key) => {
+                // 연결 강제 종료
+                const targetPc = pcsRef.current[key];
+
+                // PC cleanup 공통 로직
+                if (targetPc) {
+                    targetPc.close();
+                }
+                // pcsRef 초기화
+                pcsRef.current = {};
+                pcTypesRef.current = {};
+                pendingCandRef.current = {};
+                iceCandidateGatheredArrayRef.current = {};
+                redialCountsRef.current = {};
+                // 사용자 목록 초기화
+                setUsers([]);
+                // setUsers(prev => prev.filter(u => u.id !== key));
+                console.log(`[Peer] Closed connection with ${key}`);
+            });
+
         });
-        // Cleanup 로직 수정
+
+        socketRef.current.on('droppedOffer-redial', () => {
+            console.log(`[Peer] Redial request dropped by server.`);
+            socketRef.current?.emit('join', { room: room, type: 'redial' });
+        });
+
         return () => {
             console.log('[App] Cleaning up resources...');
 
@@ -481,38 +492,44 @@ function App() {
                     delete pcsRef.current[key];
                 });
             }
+            // clear any pending notice timer
+            if (noticeTimerRef.current) {
+                clearTimeout(noticeTimerRef.current);
+                noticeTimerRef.current = null;
+            }
         };
+
     }, []);
 
     // useCallback을 사용하여 createPeerConnection 함수를 메모이제이션
-    // peerId - parameter, RTCPeerConnection - return type
-
-    // 새로운 피어와 연결될 때마다 호출되어 RTCPeerConnection 객체를 생성
+    // peerId - parameter; 나와 연결될 피어, RTCPeerConnection - return type
     const createPeerConnection = useCallback((peerId: string, type: string): RTCPeerConnection => {
 
+
         console.log(`[Peer] createPeerConnection ${peerId}`);
+        // record the type of this peer connection so handlers can decide actions later
+        pcTypesRef.current[peerId] = type;
         const pc = new RTCPeerConnection(pcConfig);
         // const pc = new RTCPeerConnection(config);
-
-        // 로컬 트랙 추가
         if (type === 'recvonly') {
             console.log(`[Peer] Setting up recvonly connection `);
             pc.addTransceiver('video', { direction: 'recvonly' });
             pc.addTransceiver('audio', { direction: 'recvonly' });
         }
         else {
-
             if (localStreamRef.current !== null) {
                 console.log('[Peer] Add local stream to peer connection');
                 localStreamRef.current.getTracks().forEach(track => {
+                    // Scalable Mode: track에 다른 피어로부터 받은 Stream 
+                    // (내 스트림이 아닌 전달할 Stream을 담으면 됨)
                     pc.addTrack(track, localStreamRef.current!);
                 });
-
             } else {
                 console.error('Local media stream is null');
             }
 
         }
+
 
         // ICE Candidate 수집 핸들러... 송신 측
         pc.onicecandidate = event => {
@@ -536,20 +553,25 @@ function App() {
             console.warn('ICE error', err.errorCode, err.errorText, err.url);
         };
 
-        // 연결 상태 모니터링
+
         pc.onconnectionstatechange = async () => {
-            //console.log(`[${peerId}] state:`, pc.connectionState);
-            console.log(`[${peerId}]${pc.connectionState} state:`, pc.connectionState);
+            console.log(`[${peerId}] state:`, pc.connectionState);
+
             if (pc.connectionState === 'disconnected') {
-                console.log(`[${peerId}] Connection . ${pcTypesRef.current[peerId]}Attempting renegotiate.`);
-                // 재연결 시도 join-redial for offerer connections
+                console.log(`[${peerId}] Connection ${pc.connectionState}.`);
+
+                // 재연결 시도 join-redial for recvonly connections
                 const pcType = pcTypesRef.current[peerId];
-                // Offerer 인지 확인 후 renegotiate 
-                if (pcType === 'offerer') {
+                console.log(`[${peerId}] Connection disconnected. Attempting renegotiate.`);
+                if (pcType === 'recvonly') {
+                    // const targetPc = pcsRef.current[peerId];
+                    console.log(`[${peerId}] recvonly connection lost. Attempting renegotiate.`);
                     renegotiateSamePc(peerId);
                 }
             }
-            else if (pc.connectionState === 'failed') {
+            else if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+                // 재연결 시도 redial
+                console.log(`[${peerId}] Connection failed. Attempting to redial ICE...`);
                 const targetPc = pcsRef.current[peerId];
                 const pcType = pcTypesRef.current[peerId];
 
@@ -564,39 +586,43 @@ function App() {
                 redialCountsRef.current[peerId] = (redialCountsRef.current[peerId] || 0) + 1;
                 setUsers(prev => prev.filter(u => u.id !== peerId));
 
-                // Offerer인 경우 redial 시도
-                if (pcType === 'offerer') {
+                if (pcType === 'recvonly') {
                     if (redialCountsRef.current[peerId] > MAX_REDIAL_ATTEMPTS) {
                         console.log(`[${peerId}] Max redial attempts reached. Not attempting further redials.`);
                         return;
                     }
                     else {
-                        console.log(`[${peerId}] offerer connection lost. Attempting redial.${redialCountsRef.current[peerId]}`);
-                        socketRef.current?.emit('join', { room: room, type: 'redial', to: peerId });
+                        console.log(`[${peerId}] recvonly connection lost. Attempting redial.${redialCountsRef.current[peerId]}`);
+                        // 1:N과 그대로지만, payload에 to가 없기 때문에 서버에서 myid로 처리됨 
+                        socketRef.current?.emit('join', { room: room, type: 'redial' });
                     }
-                } else {
-                    console.log(`[${peerId}] Non-offerer connection failed. Closing peer connection.`);
                 }
-            }
+                else {
+                    console.log(`[${peerId}] Non-recvonly connection failed. Closing peer connection.`);
+                }
 
+            }
+            else if (pc.signalingState === 'closed') {
+                console.log(`[${peerId}] Signaling state closed.`);
+            }
+            else if (pc.iceConnectionState === 'closed') {
+                console.log(`[${peerId}] ICE connection state closed.`);
+            }
             else if (pc.connectionState === 'connected') {
                 console.log(`[${peerId}] Connection established successfully.changeCount:${changeCount}`);
                 redialCountsRef.current[peerId] = 0; // 재연결 성공 시 카운트 초기화
                 if (changeCount === 0) {
-                    // changeStream(); /////////////////////
+                    // changeStream();
                     changeCount++;
                 }
-                /*
-                pc.getStats().then(stats => {
-                    stats.forEach(report => {
-                        console.log(`[${peerId}] Stats Report:`, report);
-                    });
-                });
-                */
+                // pc.getStats().then(stats => {
+                //     stats.forEach(report => {
+                //         console.log(`[${peerId}] Stats Report:`, report);
+                //     });
+                // });
             }
         };
 
-        // 수신 측. 트랙 수신 핸들러. P2P 연결이 성공하고 미디어 데이터가 넘어오기 시작하면 ontrack 이벤트가 발생
         pc.ontrack = event => {
             // setUsers(prevUsers => [...prevUsers, { id: peerId, socket: socket, stream: event.streams[0] }]);
             // setUsers 처리.
@@ -604,6 +630,7 @@ function App() {
             // 2.true면 map으로 순회하면서 해당 id의 특성 업데이트 및 추가 객체를 반환
             // 3.false면 기존 배열에 새 객체 추가
             // ...user : user의 나머지 속성들을 복사
+
             const stream = event.streams[0];
             const socket = socketRef.current;
             if (socket) {
@@ -612,11 +639,43 @@ function App() {
                         ? prev.map(user => user.id === peerId ? { ...user, stream: event.streams[0] } : user)
                         : [...prev, { id: peerId, socket: socket, stream: event.streams[0] }]
                 );
+
+                // Scalable K-트리 구조에서 root broadcaster는 remoteStream을 로컬 스트림으로 설정
+                localStreamRef.current = stream; // 받은 스트림을 로컬 스트림으로 설정
+                // 보낼 스트림을 최상단 화면에 띄우기 위함
+                if (localVideoRef.current) {
+                    localVideoRef.current.srcObject = localStreamRef.current;
+                }
             }
             console.log(`[Peer] Received remote stream  from ${peerId}`, stream?.getVideoTracks());
-            console.log(`[Peer] RTCPeerConnection getStats`, pc.getStats());
+            // console.log(`[Peer] RTCPeerConnection getStats`, pc.getStats());
+            if (hasStreamChangedRef.current) {
+                console.log(`[Peer] Stream has been changed before for ${peerId}, replacing tracks...`);
+                const newVideo = stream.getVideoTracks()[0] ?? null;
+                const newAudio = stream.getAudioTracks()[0] ?? null;
 
+                const pcs = pcsRef.current;
+                if (!pcs) return;
 
+                Object.entries(pcs).forEach(([remotePeerId, childPc]) => {
+                    // '자식/다른 연결'에만 보내고 싶으면 부모는 제외
+                    if (childPc === pc) return;
+
+                    childPc.getSenders().forEach((sender) => {
+                        if (!sender.track) return;
+
+                        if (sender.track.kind === "video") {
+                            sender.replaceTrack(newVideo);
+                        }
+                        if (sender.track.kind === "audio") {
+                            sender.replaceTrack(newAudio);
+                        }
+                    });
+
+                    console.log(`[P4] replaceTrack() to ${remotePeerId}: video=${!!newVideo}, audio=${!!newAudio}`);
+                });
+            }
+            if (!hasStreamChangedRef.current) hasStreamChangedRef.current = true;
         };
 
         pc.onicegatheringstatechange = () => {
@@ -628,21 +687,19 @@ function App() {
 
 
         return pc;
-    }, [socketRef.current, myid]); // 의존성 배열이 비어있으므로 이 함수는 컴포넌트가 처음 렌더링될 때 한 번만 생성
+    }, [socketRef.current]); // 의존성 배열이 비어있으므로 이 함수는 컴포넌트가 처음 렌더링될 때 한 번만 생성
 
-    // ICE 후보 배열 송신: 버튼 기반 candidateArray 전송 / 테스트용
+    // ICE send
     const sendIceCandidate = useCallback((peerId: string) => {
         const candArray = iceCandidateGatheredArrayRef.current[peerId] || [];
         const pc = pcsRef.current[peerId];
         console.log(`[Peer] ICE candidate gathering state before sent: ${pc.iceGatheringState}`);
         console.log(`[Peer] Sending ICE candidates to signaling server... count:${candArray.length}`, " ", candArray);
-
         if (candArray.length === 0) {
             console.log(`[Peer] No ICE candidates to send.`);
             return;
         }
         else {
-            // 모아두었던 candidate들을 한 번에 전송
             socketRef.current?.emit('candidateArray', { to: peerId, data: candArray });
             console.log(`[Peer] Sent ${candArray.length} ICE candidates to ${peerId}`);
         }
@@ -692,19 +749,20 @@ function App() {
             // 핵심: 같은 pc에서 ICE restart + offer 재생성
             const offer = await pc.createOffer({ iceRestart: true });
 
-            // SDP bandwidth 제한 로직 유지
+            // 처음 설정한 SDP bandwidth 제한 로직 유지 가능
             const newSdp = setMaxBandwidth(offer.sdp || '', 'video', BITRATE);
             const localDesc = newSdp ? { type: offer.type, sdp: newSdp } : offer;
 
             await pc.setLocalDescription(localDesc);
 
-            // 서버로 offer 전송 (기존 이벤트명 유지)
-            socket.emit('offer', { to: peerId, data: localDesc });
+            // 서버로 offer 전송
+            socket.emit('offer-renegotiate', { to: peerId, data: localDesc });
             console.log(`[${peerId}] Renegotiation offer sent.`);
         } catch (e) {
             console.error(`[${peerId}] renegotiation failed`, e);
         }
     }, []);
+
 
     const forceDisconnectPeer = (peerId: string) => {
         const pc = pcsRef.current[peerId];
@@ -714,6 +772,7 @@ function App() {
         }
 
         try {
+
             // 연결 강제 종료
             pc.close();
         } catch (e) {
@@ -731,7 +790,6 @@ function App() {
         return true;
     };
     forceDisconnectPeerRef.current = forceDisconnectPeer;
-
     // 방 재접속: 전 피어 종료 + ref/state 초기화 + 소켓 재연결
     const reset = useCallback(async () => {
         console.log(`[RESET] Disconnecting all ${Object.keys(pcsRef.current).length} peers...`);
@@ -783,6 +841,7 @@ function App() {
         };
     }, [forceDisconnectPeerRef, reset]);
 
+
     return (
         <div style={{ padding: 16, fontFamily: "system-ui, sans-serif" }}>
             <h2>WebRTC Peer (React)</h2>
@@ -792,6 +851,7 @@ function App() {
                     ref={localVideoRef}
                     autoPlay
                     playsInline
+                    muted
                     style={{ width: '100%', height: '100%', background: "#000" }}
                 />
 
@@ -836,6 +896,22 @@ function App() {
                 <pre style={{ background: "#f6f6f6", padding: 12, maxHeight: 240, overflow: "auto" }}>
                 </pre>
             </div>
+            {notice && (
+                <div style={{
+                    position: 'fixed',
+                    top: 20,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    background: 'rgba(0,0,0,0.85)',
+                    color: '#fff',
+                    padding: '10px 16px',
+                    borderRadius: 8,
+                    zIndex: 10000,
+                    fontSize: 16
+                }}>
+                    {notice}
+                </div>
+            )}
         </div>
 
     );
