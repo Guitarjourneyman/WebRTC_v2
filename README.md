@@ -1,6 +1,4 @@
 # WebRTC_v2
-Mesh && 1:N flat 구조  
-App.tsx에서 MODE = 'MESH' || '1_TO_N' 설정
 
 ## Playing Demo screen
 <p align="center">
