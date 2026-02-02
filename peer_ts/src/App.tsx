@@ -30,7 +30,7 @@ const BitrateConfig: Record<BitrateLevel, number> = {
     max: 2000000,  // 2 Mbps
 };
 
-const BITRATE: number = 500; // <DG> 500 kbps. setMaxBandwidth를 이용하는 경우에만 이 값을 적용해야 함. (setVideoBitrate는 기본 단위가 kbps가 아니라 bps임.) 
+const BITRATE: number = 50000; // <DG> 50Mbps. setMaxBandwidth를 이용하는 경우에만 이 값을 적용해야 함. (setVideoBitrate는 기본 단위가 kbps가 아니라 bps임.) 
 
 const MAX_REDIAL_ATTEMPTS = 2; // 최대 재연결 시도 횟수
 
@@ -50,15 +50,15 @@ const displayMediaOptions = {
 
 const constraints = { // <DG> 해상도 및 프레임레이트 제약 설정 프리셋
     video: {
-        width: { ideal: 1920, max: 1920 },//{ ideal: 854, max: 1280 },
-        height: { ideal: 1080, max: 1080 },//{ ideal: 480, max: 720 },
-        frameRate: { ideal: 30, max: 30 },//{ ideal: 15, max: 30 },
+        width: { ideal: 1280, max: 1280 },//{ ideal: 854, max: 1280 },
+        height: { ideal: 720, max: 720 },//{ ideal: 480, max: 720 },
+        frameRate: { ideal: 15, max: 15 },//{ ideal: 15, max: 30 },
     },
     audio: true
 };
 
 // 운영 모드 설정
-const MODE: string = '1_TO_N'; // '1_TO_N' or 'MESH'
+// const MODE: string = '1_TO_N'; // '1_TO_N' or 'MESH'
 
 // 소켓 인스턴스를 컴포넌트 외부에서 한 번만 생성하여 재렌더링 시 재생성을 방지?
 export const SIGNALING_SERVER_URL = `https://192.168.0.37:8000`
@@ -145,6 +145,9 @@ function App() {
                 // 비트레이트 설정
                 parameters.encodings[0].maxBitrate = bitrate;
 
+                // <DG> 해상도 우선 설정 추가 2026.01.29.
+                parameters.degradationPreference = 'maintain-resolution';
+
                 await videoSender.setParameters(parameters);
                 console.log(`[Peer] Video bitrate for ${peerId} set to ${bitrate / 1000}bps.`);
             } catch (e) {
@@ -227,7 +230,7 @@ function App() {
 
             localStreamRef.current = await navigator.mediaDevices.getDisplayMedia(constraints);
 
-            // localStreamRef.current = await navigator.mediaDevices.getUserMedia(constraints);
+            //localStreamRef.current = await navigator.mediaDevices.getUserMedia(constraints);
 
             if (localVideoRef.current) {
                 localVideoRef.current.srcObject = localStreamRef.current;
@@ -517,12 +520,32 @@ function App() {
             pc.addTransceiver('audio', { direction: 'recvonly' });
         }
         else {
+            /* <DG> 기존 코드 주석 처리함. 2026.01.29.
             if (localStreamRef.current !== null) {
                 console.log('[Peer] Add local stream to peer connection');
                 localStreamRef.current.getTracks().forEach(track => {
                     // Scalable Mode: track에 다른 피어로부터 받은 Stream 
                     // (내 스트림이 아닌 전달할 Stream을 담으면 됨)
                     pc.addTrack(track, localStreamRef.current!);
+                });
+            */
+
+            if (localStreamRef.current !== null) {
+                console.log('[Peer] Add local stream to peer connection');
+                localStreamRef.current.getTracks().forEach(track => {
+                    // pc.addTrack은 RTCRtpSender를 반환합니다.
+                    const sender = pc.addTrack(track, localStreamRef.current!);
+
+                    // 비디오 트랙인 경우 degradationPreference 설정
+                    if (track.kind === 'video') {
+                        const parameters = sender.getParameters();
+                        // 해상도를 우선하여 설정하기.
+                        parameters.degradationPreference = 'maintain-resolution';
+
+                        sender.setParameters(parameters)
+                            .then(() => console.log(`[Peer] ${peerId} degradationPreference set to maintain-resolution`))
+                            .catch(e => console.warn(`[Peer] Failed to set degradationPreference for ${peerId}`, e));
+                    }
                 });
             } else {
                 console.error('Local media stream is null');
