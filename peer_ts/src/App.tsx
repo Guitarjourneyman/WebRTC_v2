@@ -50,9 +50,9 @@ const displayMediaOptions = {
 
 const constraints = { // <DG> 해상도 및 프레임레이트 제약 설정 프리셋
     video: {
-        width: { ideal: 1280, max: 1280 },//{ ideal: 854, max: 1280 },
-        height: { ideal: 720, max: 720 },//{ ideal: 480, max: 720 },
-        frameRate: { ideal: 15, max: 15 },//{ ideal: 15, max: 30 },
+        width: { ideal: 1920, max: 1920 }, // max를 1920으로 수정
+        height: { ideal: 1080, max: 1080 }, // max를 720에서 1080으로 수정
+        frameRate: { ideal: 60, max: 60 },
     },
     audio: true
 };
@@ -61,7 +61,7 @@ const constraints = { // <DG> 해상도 및 프레임레이트 제약 설정 프
 // const MODE: string = '1_TO_N'; // '1_TO_N' or 'MESH'
 
 // 소켓 인스턴스를 컴포넌트 외부에서 한 번만 생성하여 재렌더링 시 재생성을 방지?
-export const SIGNALING_SERVER_URL = `https://192.168.0.37:8000`
+export const SIGNALING_SERVER_URL = `https://192.168.1.4:8000`
 
 // const socket = io(`https://192.168.0.8:8000`, { autoConnect: false });
 const pcConfig: RTCConfiguration = {
@@ -77,7 +77,7 @@ const pcConfig: RTCConfiguration = {
 
             ]
         },
-    ]
+    ],
 };
 
 const config = {};
@@ -117,6 +117,7 @@ function App() {
     const [myid, setMyid] = useState<string>('');
     const [notice, setNotice] = useState<string>('');
     const noticeTimerRef = useRef<number | null>(null);
+    const isRootRef = useRef<boolean>(false);
 
 
     // pc Close Test 용 버튼 
@@ -290,6 +291,7 @@ function App() {
             socketRef.current?.emit('join', { room: room, type: 'broadcast' });
         });
         socketRef.current.on('root-broadcaster', () => {
+            isRootRef.current = true; // [추가] 내가 원본 방송자임을 마킹!
             console.log('[Peer] I am the root broadcaster in the room.');
             getLocalStream();
             // 나머지 피어들은 remoteSteram을 받아 localStreamRef.current에 집어넣음
@@ -317,11 +319,11 @@ function App() {
             // setVideoBitrate(peerid, BitrateConfig.min)
 
             const offer = await pc.createOffer();
-            const newSdp = setMaxBandwidth(offer.sdp || '', 'video', BITRATE);
-            await pc.setLocalDescription(newSdp ? { type: offer.type, sdp: newSdp } : offer);
-            socketRef.current?.emit('offer', { to: parentid, data: newSdp ? { type: offer.type, sdp: newSdp } : offer });
-
-            console.log(`[Peer] Sent Offer to ${parentid}`, newSdp ? { type: offer.type, sdp: newSdp } : offer);
+            /*const newSdp = setMaxBandwidth(offer.sdp || '', 'video', BITRATE);*/
+            //await pc.setLocalDescription(newSdp ? { type: offer.type, sdp: newSdp } : offer);
+            await pc.setLocalDescription(offer); // 조작없는 순정 offer를 세팅
+            //socketRef.current?.emit('offer', { to: parentid, data: newSdp ? { type: offer.type, sdp: newSdp } : offer });
+            socketRef.current?.emit('offer', { to: parentid, data: offer });
         });
 
 
@@ -338,12 +340,17 @@ function App() {
             // RemoteDescription 설정 직후 대기열 처리!! <DG>
             await flushPendingCandidates(from);
             const answer = await pc.createAnswer();
-            const newSdp = setMaxBandwidth(answer.sdp || '', 'video', BITRATE); // 비디오 대역폭 설정
-            await pc.setLocalDescription(newSdp ? { type: answer.type, sdp: newSdp } : answer);
 
-            socketRef.current?.emit('answer', { to: from, data: newSdp ? { type: answer.type, sdp: newSdp } : answer });
-            // console.log(`[Peer] Sent Answer to ${from}`,answer);
-            console.log(`[Peer] Sent Answer to ${from}`, newSdp ? { type: answer.type, sdp: newSdp } : answer);
+            let finalSdp: any = answer;
+            if (isRootRef.current) {
+                // 내가 방장이면 높은 비트레이트를 SDP에 강제로 삽입
+                const newSdp = setMaxBandwidth(answer.sdp || '', 'video', BITRATE);
+                finalSdp = newSdp ? { type: answer.type, sdp: newSdp } : answer;
+            }
+
+            await pc.setLocalDescription(finalSdp);
+            socketRef.current?.emit('answer', { to: from, data: finalSdp });
+            // console.log(`[Peer] Sent Answer to ${from}`, finalSdp);
         });
 
         socketRef.current.on('answer', async ({ from, data }: { from: string, data: any }) => {
@@ -516,8 +523,24 @@ function App() {
         // const pc = new RTCPeerConnection(config);
         if (type === 'recvonly') {
             console.log(`[Peer] Setting up recvonly connection `);
-            pc.addTransceiver('video', { direction: 'recvonly' });
+            const videoTransceiver = pc.addTransceiver('video', { direction: 'recvonly' });
             pc.addTransceiver('audio', { direction: 'recvonly' });
+
+            // [추가됨] 자식(수신처)이 Offer를 던질 때도 H.264를 1순위로 만들어야 함!
+            if (videoTransceiver && 'setCodecPreferences' in videoTransceiver) {
+                const capabilities = RTCRtpReceiver.getCapabilities('video');
+                if (capabilities && capabilities.codecs) {
+                    const h264Codecs = capabilities.codecs.filter(c => c.mimeType === 'video/H264');
+                    if (h264Codecs.length > 0) {
+                        try {
+                            videoTransceiver.setCodecPreferences(h264Codecs);
+                            console.log(`[Peer] H.264 preference set for recvonly connection`);
+                        } catch (e) {
+                            console.error('H264 preference failed for recvonly', e);
+                        }
+                    }
+                }
+            }
         }
         else {
             /* <DG> 기존 코드 주석 처리함. 2026.01.29.
@@ -536,15 +559,34 @@ function App() {
                     // pc.addTrack은 RTCRtpSender를 반환합니다.
                     const sender = pc.addTrack(track, localStreamRef.current!);
 
-                    // 비디오 트랙인 경우 degradationPreference 설정
+                    // 비디오 트랙인 경우 처리
                     if (track.kind === 'video') {
-                        const parameters = sender.getParameters();
-                        // 해상도를 우선하여 설정하기.
-                        parameters.degradationPreference = 'maintain-resolution';
+                        // [1] 원본 방장(Root)일 때만 해상도 절대 방어 옵션 부여 (릴레이 노드는 우회)
+                        if (isRootRef.current) {
+                            const parameters = sender.getParameters();
+                            parameters.degradationPreference = 'maintain-resolution';
+                            sender.setParameters(parameters)
+                                .then(() => console.log(`[Peer] ${peerId} degradationPreference set to maintain-resolution`))
+                                .catch(e => console.warn(`[Peer] Failed to set degradationPreference for ${peerId}`, e));
+                        }
 
-                        sender.setParameters(parameters)
-                            .then(() => console.log(`[Peer] ${peerId} degradationPreference set to maintain-resolution`))
-                            .catch(e => console.warn(`[Peer] Failed to set degradationPreference for ${peerId}`, e));
+                        // [2] 하드웨어 가속기(HW Encoder)를 무조건 깨우도록 H.264 코덱 강제 적용
+                        const transceiver = pc.getTransceivers().find(t => t.sender === sender);
+                        if (transceiver && 'setCodecPreferences' in transceiver) {
+                            const capabilities = RTCRtpReceiver.getCapabilities('video');
+                            if (capabilities && capabilities.codecs) {
+                                // 컴퓨터가 지원하는 코덱 리스트 중에서 H.264만 뽑아냅니다.
+                                const h264Codecs = capabilities.codecs.filter(c => c.mimeType === 'video/H264');
+                                if (h264Codecs.length > 0) {
+                                    try {
+                                        transceiver.setCodecPreferences(h264Codecs); // H.264 최우선 협상
+                                        console.log(`[Peer] H.264 Hardware Encoder preference set for ${peerId}`);
+                                    } catch (e) {
+                                        console.error('H264 preference failed', e);
+                                    }
+                                }
+                            }
+                        }
                     }
                 });
             } else {
@@ -772,14 +814,17 @@ function App() {
             // 핵심: 같은 pc에서 ICE restart + offer 재생성
             const offer = await pc.createOffer({ iceRestart: true });
 
-            // 처음 설정한 SDP bandwidth 제한 로직 유지 가능
-            const newSdp = setMaxBandwidth(offer.sdp || '', 'video', BITRATE);
-            const localDesc = newSdp ? { type: offer.type, sdp: newSdp } : offer;
+            // 처음 설정한 SDP bandwidth 제한 로직 유지 (방장 한정)
+            let finalSdp: any = offer;
+            if (isRootRef.current) {
+                const newSdp = setMaxBandwidth(offer.sdp || '', 'video', BITRATE);
+                finalSdp = newSdp ? { type: offer.type, sdp: newSdp } : offer;
+            }
 
-            await pc.setLocalDescription(localDesc);
+            await pc.setLocalDescription(finalSdp);
 
             // 서버로 offer 전송
-            socket.emit('offer-renegotiate', { to: peerId, data: localDesc });
+            socket.emit('offer-renegotiate', { to: peerId, data: finalSdp });
             console.log(`[${peerId}] Renegotiation offer sent.`);
         } catch (e) {
             console.error(`[${peerId}] renegotiation failed`, e);
