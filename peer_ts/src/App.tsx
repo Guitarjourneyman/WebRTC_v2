@@ -30,6 +30,13 @@ const BitrateConfig: Record<BitrateLevel, number> = {
     max: 2000000,  // 2 Mbps
 };
 
+type VideoCodecPreference = 'H264' | 'VP8' | 'VP9';
+const VideoCodecMimeType: Record<VideoCodecPreference, string> = {
+    H264: 'video/H264',
+    VP8: 'video/VP8',
+    VP9: 'video/VP9',
+};
+
 const BITRATE: number = 50000; // <DG> 50Mbps. setMaxBandwidth를 이용하는 경우에만 이 값을 적용해야 함. (setVideoBitrate는 기본 단위가 kbps가 아니라 bps임.) 
 
 const MAX_REDIAL_ATTEMPTS = 2; // 최대 재연결 시도 횟수
@@ -61,7 +68,7 @@ const constraints = { // <DG> 해상도 및 프레임레이트 제약 설정 프
 // const MODE: string = '1_TO_N'; // '1_TO_N' or 'MESH'
 
 // 소켓 인스턴스를 컴포넌트 외부에서 한 번만 생성하여 재렌더링 시 재생성을 방지?
-export const SIGNALING_SERVER_URL = `https://192.168.1.4:8000`
+export const SIGNALING_SERVER_URL = `https://192.168.1.5:8000`
 
 // const socket = io(`https://192.168.0.8:8000`, { autoConnect: false });
 const pcConfig: RTCConfiguration = {
@@ -118,6 +125,8 @@ function App() {
     const [notice, setNotice] = useState<string>('');
     const noticeTimerRef = useRef<number | null>(null);
     const isRootRef = useRef<boolean>(false);
+    const [selectedVideoCodec, setSelectedVideoCodec] = useState<VideoCodecPreference>('H264');
+    const selectedVideoCodecRef = useRef<VideoCodecPreference>('H264');
 
 
     // pc Close Test 용 버튼 
@@ -208,6 +217,34 @@ function App() {
         return newSdp.join('\r\n');
     }
 
+    const applyVideoCodecPreference = useCallback((transceiver: RTCRtpTransceiver, context: string): boolean => {
+        if (!('setCodecPreferences' in transceiver)) {
+            console.warn(`[Peer] setCodecPreferences is not supported for ${context}`);
+            return false;
+        }
+
+        const selectedCodec = selectedVideoCodecRef.current;
+        const preferredMimeType = VideoCodecMimeType[selectedCodec].toLowerCase();
+        const capabilities = RTCRtpReceiver.getCapabilities('video');
+        const preferredCodecs = capabilities?.codecs.filter(codec =>
+            codec.mimeType.toLowerCase() === preferredMimeType
+        ) ?? [];
+
+        if (preferredCodecs.length === 0) {
+            console.warn(`[Peer] ${selectedCodec} is not available for ${context}`);
+            return false;
+        }
+
+        try {
+            transceiver.setCodecPreferences(preferredCodecs);
+            console.log(`[Peer] ${selectedCodec} codec preference set for ${context}`);
+            return true;
+        } catch (e) {
+            console.error(`[Peer] ${selectedCodec} codec preference failed for ${context}`, e);
+            return false;
+        }
+    }, []);
+
     /* 사용 예시: 
     const originalSdp = `v=0
     o=- 3795556209 1 IN IP4 127.0.0.1
@@ -229,9 +266,9 @@ function App() {
             console.log('getLocalStream....');
             // 추후 localStreamRef로 로컬 비디오 컴포넌트에서 사용
 
-            localStreamRef.current = await navigator.mediaDevices.getDisplayMedia(constraints);
+            // localStreamRef.current = await navigator.mediaDevices.getDisplayMedia(constraints);
 
-            //localStreamRef.current = await navigator.mediaDevices.getUserMedia(constraints);
+            localStreamRef.current = await navigator.mediaDevices.getUserMedia(constraints);
 
             if (localVideoRef.current) {
                 localVideoRef.current.srcObject = localStreamRef.current;
@@ -368,37 +405,31 @@ function App() {
         // 배열 수신 ; 현재 안씀
         socketRef.current.on('candidateArray', async ({ from, data }: { from: string, data: any }) => {
             const pc = pcsRef.current[from];
-            if (pc) {
-                console.log('[Peer/Test] ICE candidate Array:', data);
-                const rd = pc.remoteDescription
-                if (!rd) {
-                    console.log("[Peer/Test] pc's remoteDescription is Null");
-                    // data is cadidateArray
-                    pendingCandRef.current[from] = data;
-                    return;
-                }
-                else if (pc.signalingState === 'closed') {
-                    console.warn(`[Peer] Ignored ICE candidateArray from ${from} because PC is closed.`)
-                    return;
-                }
-                else {
-                    console.log("[Peer/Test] remoteDescription detected. ICECandidate is added");
+            if (!pc) return;
 
-                    // console.log("[Peer] Pending queue: ", queue);
-                    if (data) {
-                        console.log("[Peer] pending candidates...");
-                        for (const cand of data) {
-                            try {
-                                await pc.addIceCandidate(cand);
-                            } catch (e) {
-                                console.warn('[Peer] addIcecandidate failed', e);
-                            }
-                        }
+            console.log('[Peer/Test] ICE candidate Array:', data);
+            const rd = pc.remoteDescription;
+            if (!rd) {
+                console.log("[Peer/Test] pc's remoteDescription is Null");
+                pendingCandRef.current[from] = data;
+                return;
+            }
+
+            if (pc.signalingState === 'closed') {
+                console.warn(`[Peer] Ignored ICE candidateArray from ${from} because PC is closed.`);
+                return;
+            }
+
+            console.log("[Peer/Test] remoteDescription detected. ICECandidate is added");
+            if (data) {
+                console.log("[Peer] pending candidates...");
+                for (const cand of data) {
+                    try {
+                        await pc.addIceCandidate(cand);
+                    } catch (e) {
+                        console.warn('[Peer] addIcecandidate failed', e);
                     }
-
-
                 }
-
             }
         });
         // 개별 수신
@@ -526,21 +557,8 @@ function App() {
             const videoTransceiver = pc.addTransceiver('video', { direction: 'recvonly' });
             pc.addTransceiver('audio', { direction: 'recvonly' });
 
-            // [추가됨] 자식(수신처)이 Offer를 던질 때도 H.264를 1순위로 만들어야 함!
-            if (videoTransceiver && 'setCodecPreferences' in videoTransceiver) {
-                const capabilities = RTCRtpReceiver.getCapabilities('video');
-                if (capabilities && capabilities.codecs) {
-                    const h264Codecs = capabilities.codecs.filter(c => c.mimeType === 'video/H264');
-                    if (h264Codecs.length > 0) {
-                        try {
-                            videoTransceiver.setCodecPreferences(h264Codecs);
-                            console.log(`[Peer] H.264 preference set for recvonly connection`);
-                        } catch (e) {
-                            console.error('H264 preference failed for recvonly', e);
-                        }
-                    }
-                }
-            }
+            // Keep the recvonly offer aligned with the selected codec.
+            applyVideoCodecPreference(videoTransceiver, `recvonly connection ${peerId}`);
         }
         else {
             /* <DG> 기존 코드 주석 처리함. 2026.01.29.
@@ -570,24 +588,12 @@ function App() {
                                 .catch(e => console.warn(`[Peer] Failed to set degradationPreference for ${peerId}`, e));
                         }
 
-                        // [2] 하드웨어 가속기(HW Encoder)를 무조건 깨우도록 H.264 코덱 강제 적용
+                        // [2] Apply the selected video codec before negotiation.
                         const transceiver = pc.getTransceivers().find(t => t.sender === sender);
-                        if (transceiver && 'setCodecPreferences' in transceiver) {
-                            const capabilities = RTCRtpReceiver.getCapabilities('video');
-                            if (capabilities && capabilities.codecs) {
-                                // 컴퓨터가 지원하는 코덱 리스트 중에서 H.264만 뽑아냅니다.
-                                const h264Codecs = capabilities.codecs.filter(c => c.mimeType === 'video/H264');
-                                if (h264Codecs.length > 0) {
-                                    try {
-                                        transceiver.setCodecPreferences(h264Codecs); // H.264 최우선 협상
-                                        console.log(`[Peer] H.264 Hardware Encoder preference set for ${peerId}`);
-                                    } catch (e) {
-                                        console.error('H264 preference failed', e);
-                                    }
-                                }
+                        if (transceiver) {
+                            applyVideoCodecPreference(transceiver, `sendonly connection ${peerId}`);
                             }
                         }
-                    }
                 });
             } else {
                 console.error('Local media stream is null');
@@ -752,7 +758,7 @@ function App() {
 
 
         return pc;
-    }, [socketRef.current]); // 의존성 배열이 비어있으므로 이 함수는 컴포넌트가 처음 렌더링될 때 한 번만 생성
+    }, [applyVideoCodecPreference, socketRef.current]); // 의존성 배열이 비어있으므로 이 함수는 컴포넌트가 처음 렌더링될 때 한 번만 생성
 
     // ICE send
     const sendIceCandidate = useCallback((peerId: string) => {
@@ -830,6 +836,25 @@ function App() {
             console.error(`[${peerId}] renegotiation failed`, e);
         }
     }, []);
+
+    const handleVideoCodecChange = useCallback((codec: VideoCodecPreference) => {
+        selectedVideoCodecRef.current = codec;
+        setSelectedVideoCodec(codec);
+
+        Object.entries(pcsRef.current).forEach(([peerId, pc]) => {
+            pc.getTransceivers()
+                .filter(transceiver =>
+                    transceiver.sender.track?.kind === 'video' ||
+                    transceiver.receiver.track?.kind === 'video' ||
+                    transceiver.mid === 'video'
+                )
+                .forEach(transceiver => applyVideoCodecPreference(transceiver, `existing connection ${peerId}`));
+
+            if (pc.signalingState === 'stable' && pc.connectionState !== 'closed') {
+                renegotiateSamePc(peerId);
+            }
+        });
+    }, [applyVideoCodecPreference, renegotiateSamePc]);
 
 
     const forceDisconnectPeer = (peerId: string) => {
@@ -913,6 +938,20 @@ function App() {
     return (
         <div style={{ padding: 16, fontFamily: "system-ui, sans-serif" }}>
             <h2>WebRTC Peer (React)</h2>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <label htmlFor="video-codec-select" style={{ fontWeight: 600 }}>Video Codec</label>
+                <select
+                    id="video-codec-select"
+                    value={selectedVideoCodec}
+                    onChange={(event) => handleVideoCodecChange(event.target.value as VideoCodecPreference)}
+                    style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid #aaa' }}
+                >
+                    <option value="H264">H.264</option>
+                    <option value="VP8">VP8</option>
+                    <option value="VP9">VP9</option>
+                </select>
+            </div>
 
             <div style={{ display: 'flex', width: 480, height: 240 }}>
                 <video
