@@ -23,11 +23,28 @@ export interface WebRTCUser {
     stream: MediaStream;
 }
 
+export interface VideoLatencyStats {
+    encodeMs: number | null;
+    decodeMs: number | null;
+}
+
+interface VideoStatsSnapshot {
+    framesEncoded?: number;
+    totalEncodeTime?: number;
+    framesDecoded?: number;
+    totalDecodeTime?: number;
+}
+
+interface VideoLatencyLogRow extends VideoLatencyStats, VideoStatsSnapshot {
+    peerId: string;
+    connectionType?: string;
+}
+
 type BitrateLevel = 'min' | 'medium' | 'max';
 const BitrateConfig: Record<BitrateLevel, number> = {
-    min: 50000,   // 50 kbps
-    medium: 1000000, // 1 Mbps
-    max: 2000000,  // 2 Mbps
+    min: 500000,   // 500 kbps
+    medium: 1000000, // 1 Gbps
+    max: 20000000,  // 2 Gbps
 };
 
 type VideoCodecPreference = 'H264' | 'VP8' | 'VP9';
@@ -37,7 +54,7 @@ const VideoCodecMimeType: Record<VideoCodecPreference, string> = {
     VP9: 'video/VP9',
 };
 
-const BITRATE: number = 50000; // <DG> 50Mbps. setMaxBandwidth를 이용하는 경우에만 이 값을 적용해야 함. (setVideoBitrate는 기본 단위가 kbps가 아니라 bps임.) 
+const BITRATE: number = BitrateConfig.min; // <DG> 기본단위 kbps. setMaxBandwidth를 이용하는 경우에만 이 값을 적용해야 함. (setVideoBitrate는 기본 단위가 kbps가 아니라 bps임.) 
 
 const MAX_REDIAL_ATTEMPTS = 2; // 최대 재연결 시도 횟수
 
@@ -57,9 +74,9 @@ const displayMediaOptions = {
 
 const constraints = { // <DG> 해상도 및 프레임레이트 제약 설정 프리셋
     video: {
-        width: { ideal: 1920, max: 1920 }, // max를 1920으로 수정
-        height: { ideal: 1080, max: 1080 }, // max를 720에서 1080으로 수정
-        frameRate: { ideal: 60, max: 60 },
+        width: { ideal: 1280, max: 1280 }, // max를 1920으로 수정
+        height: { ideal: 720, max: 720 }, // max를 720에서 1080으로 수정
+        frameRate: { ideal: 15, max: 15 },
     },
     audio: true
 };
@@ -121,18 +138,142 @@ function App() {
 
     // 사용자 상태(React state)
     const [users, setUsers] = useState<WebRTCUser[]>([]);
+    const [sendonlyPeerIds, setSendonlyPeerIds] = useState<string[]>([]);
     const [myid, setMyid] = useState<string>('');
     const [notice, setNotice] = useState<string>('');
     const noticeTimerRef = useRef<number | null>(null);
     const isRootRef = useRef<boolean>(false);
-    const [selectedVideoCodec, setSelectedVideoCodec] = useState<VideoCodecPreference>('H264');
-    const selectedVideoCodecRef = useRef<VideoCodecPreference>('H264');
+    const [selectedVideoCodec, setSelectedVideoCodec] = useState<VideoCodecPreference>('VP9');
+    const selectedVideoCodecRef = useRef<VideoCodecPreference>('VP9');
+    const [videoLatencies, setVideoLatencies] = useState<Record<string, VideoLatencyStats>>({});
+    const previousVideoStatsRef = useRef<Record<string, VideoStatsSnapshot>>({});
+    const lastStatsLogAtRef = useRef<number>(0);
+    const [isStatsLoggingEnabled, setIsStatsLoggingEnabled] = useState<boolean>(false);
+    const isStatsLoggingEnabledRef = useRef<boolean>(false);
 
 
     // pc Close Test 용 버튼 
     const forceDisconnectPeerRef = useRef<(peerId: string) => boolean>(() => false);
     /* 송신 비트레이트 설정: RTCRtpSender.setParameters 기반 */
     const TIMEOUT_DURATION = 0; //0초
+
+    const calculateAverageMs = (
+        currentTotal: number | undefined,
+        previousTotal: number | undefined,
+        currentFrames: number | undefined,
+        previousFrames: number | undefined
+    ): number | null => {
+        if (
+            currentTotal === undefined ||
+            previousTotal === undefined ||
+            currentFrames === undefined ||
+            previousFrames === undefined
+        ) {
+            return null;
+        }
+
+        const frameDelta = currentFrames - previousFrames;
+        const timeDelta = currentTotal - previousTotal;
+
+        if (frameDelta <= 0 || timeDelta < 0) return null;
+
+        return (timeDelta / frameDelta) * 1000;
+    };
+
+    const pollVideoLatencyStats = useCallback(async () => {
+        const entries = Object.entries(pcsRef.current);
+        if (entries.length === 0) return;
+
+        const nextLatencies: Record<string, VideoLatencyStats> = {};
+        const logRows: VideoLatencyLogRow[] = [];
+
+        await Promise.all(entries.map(async ([peerId, pc]) => {
+            if (pc.connectionState === 'closed') return;
+
+            try {
+                const stats = await pc.getStats();
+                const current: VideoStatsSnapshot = {};
+
+                stats.forEach((report: any) => {
+                    const isVideo = report.kind === 'video' || report.mediaType === 'video';
+                    if (!isVideo) return;
+
+                    if (report.type === 'outbound-rtp') {
+                        current.framesEncoded = report.framesEncoded;
+                        current.totalEncodeTime = report.totalEncodeTime;
+                    }
+
+                    if (report.type === 'inbound-rtp') {
+                        current.framesDecoded = report.framesDecoded;
+                        current.totalDecodeTime = report.totalDecodeTime;
+                    }
+                });
+
+                const previous = previousVideoStatsRef.current[peerId] ?? {};
+                const encodeMs = calculateAverageMs(
+                    current.totalEncodeTime,
+                    previous.totalEncodeTime,
+                    current.framesEncoded,
+                    previous.framesEncoded
+                );
+                const decodeMs = calculateAverageMs(
+                    current.totalDecodeTime,
+                    previous.totalDecodeTime,
+                    current.framesDecoded,
+                    previous.framesDecoded
+                );
+
+                previousVideoStatsRef.current[peerId] = current;
+                nextLatencies[peerId] = {
+                    encodeMs,
+                    decodeMs,
+                };
+                logRows.push({
+                    peerId,
+                    connectionType: pcTypesRef.current[peerId],
+                    framesEncoded: current.framesEncoded,
+                    totalEncodeTime: current.totalEncodeTime,
+                    encodeMs,
+                    framesDecoded: current.framesDecoded,
+                    totalDecodeTime: current.totalDecodeTime,
+                    decodeMs,
+                });
+            } catch (error) {
+                console.warn(`[Stats] Failed to poll video latency stats for ${peerId}`, error);
+            }
+        }));
+
+        if (Object.keys(nextLatencies).length === 0) return;
+
+        setVideoLatencies(prev => {
+            const merged = { ...prev };
+            Object.entries(nextLatencies).forEach(([peerId, latency]) => {
+                merged[peerId] = {
+                    encodeMs: latency.encodeMs ?? prev[peerId]?.encodeMs ?? null,
+                    decodeMs: latency.decodeMs ?? prev[peerId]?.decodeMs ?? null,
+                };
+            });
+            return merged;
+        });
+
+        const now = Date.now();
+        if (isStatsLoggingEnabledRef.current && now - lastStatsLogAtRef.current >= 5000 && logRows.length > 0) {
+            lastStatsLogAtRef.current = now;
+            socketRef.current?.emit('latency-stats-log', {
+                timestamp: new Date(now).toISOString(),
+                selfId: myidRef.current,
+                rows: logRows,
+            });
+        }
+    }, []);
+
+    useEffect(() => {
+        const intervalId = window.setInterval(() => {
+            void pollVideoLatencyStats();
+        }, 1000);
+
+        return () => window.clearInterval(intervalId);
+    }, [pollVideoLatencyStats]);
 
     const setVideoBitrate = useCallback(async (peerId: string, bitrate: number) => {
         const pc = pcsRef.current[peerId];
@@ -268,7 +409,7 @@ function App() {
 
             // localStreamRef.current = await navigator.mediaDevices.getDisplayMedia(constraints);
 
-            localStreamRef.current = await navigator.mediaDevices.getUserMedia(constraints);
+            localStreamRef.current = await navigator.mediaDevices.getDisplayMedia(constraints);
 
             if (localVideoRef.current) {
                 localVideoRef.current.srcObject = localStreamRef.current;
@@ -369,6 +510,7 @@ function App() {
 
             // 트리구조이기 때문에 sendonly 연결 생성
             pcsRef.current[from] = createPeerConnection(from, 'sendonly');
+            setSendonlyPeerIds(prev => prev.includes(from) ? prev : [...prev, from]);
             const pc = pcsRef.current[from];
             // 보내기 전 Bit rate 설정
             // setVideoBitrate(from, BitrateConfig.min)
@@ -486,6 +628,12 @@ function App() {
                 pendingCandRef.current = {};
                 iceCandidateGatheredArrayRef.current = {};
                 redialCountsRef.current = {};
+                previousVideoStatsRef.current = {};
+                lastStatsLogAtRef.current = 0;
+                isStatsLoggingEnabledRef.current = false;
+                setIsStatsLoggingEnabled(false);
+                setVideoLatencies({});
+                setSendonlyPeerIds([]);
                 // 사용자 목록 초기화
                 setUsers([]);
                 // setUsers(prev => prev.filter(u => u.id !== key));
@@ -654,6 +802,13 @@ function App() {
                 delete pcTypesRef.current[peerId];
                 pendingCandRef.current[peerId] = [];
                 iceCandidateGatheredArrayRef.current[peerId] = [];
+                delete previousVideoStatsRef.current[peerId];
+                setSendonlyPeerIds(prev => prev.filter(id => id !== peerId));
+                setVideoLatencies(prev => {
+                    const next = { ...prev };
+                    delete next[peerId];
+                    return next;
+                });
                 redialCountsRef.current[peerId] = (redialCountsRef.current[peerId] || 0) + 1;
                 setUsers(prev => prev.filter(u => u.id !== peerId));
 
@@ -876,6 +1031,13 @@ function App() {
         delete pcsRef.current[peerId];
         delete pcTypesRef.current[peerId];
         if (pendingCandRef.current) pendingCandRef.current[peerId] = [];
+        delete previousVideoStatsRef.current[peerId];
+        setSendonlyPeerIds(prev => prev.filter(id => id !== peerId));
+        setVideoLatencies(prev => {
+            const next = { ...prev };
+            delete next[peerId];
+            return next;
+        });
 
         // setUsers(prev => prev.filter(u => u.id !== peerId));
 
@@ -908,6 +1070,12 @@ function App() {
         pendingCandRef.current = {};
         iceCandidateGatheredArrayRef.current = {};
         redialCountsRef.current = {};
+        previousVideoStatsRef.current = {};
+        lastStatsLogAtRef.current = 0;
+        isStatsLoggingEnabledRef.current = false;
+        setIsStatsLoggingEnabled(false);
+        setVideoLatencies({});
+        setSendonlyPeerIds([]);
         // 사용자 목록 초기화
         setUsers([]);
         console.log(`[RESET] Successfully disconnected ${disconnectedCount} peers`);
@@ -935,6 +1103,31 @@ function App() {
     }, [forceDisconnectPeerRef, reset]);
 
 
+    const allEncodeSamples = Object.values(videoLatencies)
+        .map(latency => latency.encodeMs)
+        .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+    const allDecodeSamples = Object.values(videoLatencies)
+        .map(latency => latency.decodeMs)
+        .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+    const localEncodeMs = allEncodeSamples.length > 0
+        ? allEncodeSamples.reduce((sum, value) => sum + value, 0) / allEncodeSamples.length
+        : null;
+    const localDecodeMs = allDecodeSamples.length > 0
+        ? allDecodeSamples.reduce((sum, value) => sum + value, 0) / allDecodeSamples.length
+        : null;
+    const formatLatencyText = (value: number | null) => (
+        typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(1)} ms` : 'N/A'
+    );
+    const toggleStatsLogging = useCallback(() => {
+        setIsStatsLoggingEnabled(prev => {
+            const next = !prev;
+            isStatsLoggingEnabledRef.current = next;
+            lastStatsLogAtRef.current = 0;
+            console.log(`[Stats] File logging ${next ? 'enabled' : 'disabled'}`);
+            return next;
+        });
+    }, []);
+
     return (
         <div style={{ padding: 16, fontFamily: "system-ui, sans-serif" }}>
             <h2>WebRTC Peer (React)</h2>
@@ -951,9 +1144,23 @@ function App() {
                     <option value="VP8">VP8</option>
                     <option value="VP9">VP9</option>
                 </select>
+                <button
+                    onClick={toggleStatsLogging}
+                    style={{
+                        padding: '6px 12px',
+                        border: 'none',
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                        backgroundColor: isStatsLoggingEnabled ? '#1f8f4d' : '#555',
+                        color: 'white',
+                        fontWeight: 600,
+                    }}
+                >
+                    Log {isStatsLoggingEnabled ? 'ON' : 'OFF'}
+                </button>
             </div>
 
-            <div style={{ display: 'flex', width: 480, height: 240 }}>
+            <div style={{ position: 'relative', display: 'flex', width: 480, height: 240 }}>
                 <video
                     ref={localVideoRef}
                     autoPlay
@@ -977,8 +1184,36 @@ function App() {
                 >
                     {myid}
                 </div>
+                <div
+                    style={{
+                        position: 'absolute',
+                        bottom: '10px',
+                        left: '10px',
+                        right: '10px',
+                        color: 'white',
+                        backgroundColor: 'rgba(0, 0, 0, 0.58)',
+                        padding: '5px 10px',
+                        borderRadius: '5px',
+                        fontSize: '14px',
+                        lineHeight: 1.35,
+                    }}
+                >
+                    Enc {formatLatencyText(localEncodeMs)} / Dec {formatLatencyText(localDecodeMs)}
+                </div>
                 <button onClick={() => (changeStream())}>Change Stream</button>
                 <button onClick={() => reset()} style={{ marginLeft: 8, backgroundColor: '#ff4444', color: 'white', padding: '6px 12px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>RESET</button>
+                {isRootRef.current && sendonlyPeerIds.length > 0 && (
+                    <div style={{ marginTop: '5px' }}>
+                        {sendonlyPeerIds.map(peerId => (
+                            <div key={peerId} style={{ marginTop: '5px' }}>
+                                <span style={{ marginRight: '5px' }}>{peerId}</span>
+                                <button onClick={() => setVideoBitrate(peerId, BitrateConfig.min)}>Min</button>
+                                <button onClick={() => setVideoBitrate(peerId, BitrateConfig.medium)}>Medium</button>
+                                <button onClick={() => setVideoBitrate(peerId, BitrateConfig.max)}>Max</button>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
 
 
@@ -987,11 +1222,15 @@ function App() {
             {
                 users.map((user) => (
                     <div key={user.id}>
-                        <Video peerId={user.id} stream={user.stream} />
+                        <Video
+                            peerId={user.id}
+                            stream={user.stream}
+                            latency={videoLatencies[user.id]}
+                        />
                         <div style={{ marginTop: '5px' }}>
-                            {/* <button onClick={() => setVideoBitrate(user.id, BitrateConfig.min)}>Min</button> */}
-                            {/* <button onClick={() => setVideoBitrate(user.id, BitrateConfig.medium)}>Medium</button> */}
-                            {/* <button onClick={() => setVideoBitrate(user.id, BitrateConfig.max)}>Max</button> */}
+                            { <button onClick={() => setVideoBitrate(user.id, BitrateConfig.min)}>Min</button> }
+                            { <button onClick={() => setVideoBitrate(user.id, BitrateConfig.medium)}>Medium</button> }
+                            { <button onClick={() => setVideoBitrate(user.id, BitrateConfig.max)}>Max</button> }
                             {<button onClick={() => sendIceCandidate(user.id)}>Send ICE</button>}
 
                         </div>

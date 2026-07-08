@@ -1,4 +1,5 @@
 const fs = require('fs');
+const path = require('path');
 const https = require('https');
 const express = require('express');
 const app = express();
@@ -36,12 +37,32 @@ const rooms = new Map();
 const peers = new Map();
 // broadcaster 관리용 객체(맵) (key: roomid, value: { broadcasters: {}, activeBroadcasters: {} ,allpeers: {}} )
 var listOfBroadcasts = {};
-const AVAILABLE_BROADCASTING_NUMBER = 8; // 각 중계자가 감당할 수 있는 최대 시청자 수
+const AVAILABLE_BROADCASTING_NUMBER = 30; // 각 중계자가 감당할 수 있는 최대 시청자 수
 // 디버깅용 시퀀스 넘버
 let seq = 0;
+const latencyLogDir = path.join(__dirname, 'latency_logs');
+
+function sanitizeFilePart(value) {
+    return String(value ?? 'unknown').replace(/[^a-zA-Z0-9_.-]/g, '_');
+}
+
+function createLatencyLogFile(peerId) {
+    fs.mkdirSync(latencyLogDir, { recursive: true });
+    const filePath = path.join(latencyLogDir, `webrtc_latency_${sanitizeFilePart(peerId)}.txt`);
+    const header = [
+        `# WebRTC latency log`,
+        `# peerId=${peerId}`,
+        `# createdAt=${new Date().toISOString()}`,
+        `timestamp,selfId,peerId,connectionType,framesEncoded,totalEncodeTime,encodeMs,framesDecoded,totalDecodeTime,decodeMs`,
+        ``,
+    ].join('\n');
+    fs.writeFileSync(filePath, header, 'utf8');
+    return filePath;
+}
 
 io.on('connection', socket => {
     let id = Math.random().toString(36).substr(2, 9) + '_' + seq++; // generate random ID
+    let latencyLogFile = null;
     // 기존의  id-socket 맵핑을 새로운 Peer 객체로 변경
     // peers.set(id, socket);
     console.log(`[Server] New connection: ${id}`);
@@ -468,6 +489,35 @@ io.on('connection', socket => {
         targetPeer.socket.emit('candidateArray', { from: id, data });
         console.log(`[Server] Candidate from ${id} to ${to}`);
     })
+
+    socket.on('latency-stats-log', ({ timestamp, selfId, rows }) => {
+        if (!Array.isArray(rows) || rows.length === 0) return;
+
+        if (!latencyLogFile) {
+            latencyLogFile = createLatencyLogFile(id);
+            console.log(`[Server] Latency log file: ${latencyLogFile}`);
+        }
+
+        const safeValue = (value) => value === null || value === undefined ? '' : String(value);
+        const lines = rows.map((row) => [
+            safeValue(timestamp),
+            safeValue(selfId ?? id),
+            safeValue(row.peerId),
+            safeValue(row.connectionType),
+            safeValue(row.framesEncoded),
+            safeValue(row.totalEncodeTime),
+            safeValue(row.encodeMs),
+            safeValue(row.framesDecoded),
+            safeValue(row.totalDecodeTime),
+            safeValue(row.decodeMs),
+        ].join(','));
+
+        fs.appendFile(latencyLogFile, `${lines.join('\n')}\n`, (error) => {
+            if (error) {
+                console.warn(`[Server] Failed to append latency stats for ${id}`, error);
+            }
+        });
+    });
 
     socket.on('disconnect', () => {
         console.log(`[Server] Peer ${id} disconnected.`);
